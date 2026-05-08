@@ -5,18 +5,14 @@ from flask import Flask, jsonify, request
 from flask_socketio import SocketIO
 
 import time
-import random
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 
 @app.get("/health")
 def health():
-    # Get current server time
     server_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    # Try to get client IP
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    # Latency: if client sends ?ping=timestamp, return round-trip
     ping = request.args.get("ping")
     latency = None
     if ping:
@@ -36,6 +32,7 @@ def health():
 
 players = {}
 playercount = 0
+tagger_id = None  # track who is "it"
 
 
 @app.get("/")
@@ -44,50 +41,73 @@ def index():
 
 @socketio.on('connect')
 def handle_connect():
-    global playercount
+    global playercount, tagger_id
     sid = request.sid
-    # Spawn at random position spread across the game area
-    # Game canvas is roughly 1280x720, players spawn in center-ish area
-    x = random.randint(400, 900)
-    y = random.randint(200, 500)
-    
-    players[sid] = {"x": x, "y": y}
-    playercount = playercount + 1
-    print(f"[SERVER] Player joined: {sid} at ({x}, {y}) | Total players: {playercount}")
-    
-    # Broadcast updated player list to ALL clients
-    socketio.emit('player_update', {"players": players})
-    
+    players[sid] = {"x": 100, "y": 100}
+    playercount += 1
+    print(f"[SERVER] Player joined: {sid} | count: {playercount}")
+
+    # First player to join becomes the tagger
+    if tagger_id is None:
+        tagger_id = sid
+        print(f"[SERVER] {sid} is now IT (first player)")
+
+    socketio.emit('player_update', {"players": players, "taggerId": tagger_id})
+    # Also send a dedicated tag_update so the new joiner knows who is "it"
+    socketio.emit('tag_update', {"taggerId": tagger_id})
+
 @socketio.on('move')
 def handle_move(data):
     sid = request.sid
     if sid in players and "x" in data and "y" in data:
         players[sid]["x"] = data["x"]
         players[sid]["y"] = data["y"]
-        # Broadcast to ALL clients so everyone sees the movement
-        socketio.emit('player_update', {"players": players})
+        socketio.emit('player_update', {"players": players, "taggerId": tagger_id})
+
+@socketio.on('tag')
+def handle_tag(data):
+    global tagger_id
+    sid = request.sid
+
+    # Server-side validation: only accept if sender is actually "it"
+    if sid != tagger_id:
+        print(f"[SERVER] Rejected tag from {sid} — they are not IT")
+        return
+
+    tagged_id = data.get("taggedId")
+    if not tagged_id or tagged_id not in players:
+        print(f"[SERVER] Rejected tag — target {tagged_id} not found")
+        return
+
+    tagger_id = tagged_id
+    print(f"[SERVER] {sid} tagged {tagged_id} — {tagged_id} is now IT")
+    socketio.emit('tag_update', {"taggerId": tagger_id})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    global playercount
+    global playercount, tagger_id
     sid = request.sid
     if sid in players:
         del players[sid]
-        playercount = playercount - 1
-        print(f"[SERVER] Player disconnected: {sid} | Remaining players: {playercount}")
-        # Notify all clients about the disconnection
-        socketio.emit('player_left', {"sid": sid})
-        # Also send updated player list
-        socketio.emit('player_update', {"players": players})
+        playercount -= 1
+        print(f"[SERVER] Player disconnected: {sid} | count: {playercount}")
 
-# Socket.IO event for live status (same info as /health)
+        # If the tagger disconnected, assign to another player
+        if tagger_id == sid:
+            remaining = list(players.keys())
+            tagger_id = remaining[0] if remaining else None
+            print(f"[SERVER] Tagger left — new IT: {tagger_id}")
+            socketio.emit('tag_update', {"taggerId": tagger_id})
+
+        socketio.emit('player_left', {"sid": sid})
+        socketio.emit('player_update', {"players": players, "taggerId": tagger_id})
+
 @socketio.on('get_live_status')
 def handle_live_status(data=None):
     server_time = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     ping = None
     latency = None
-    # If client sends {"ping": <epoch_seconds>} as payload, calculate latency
     if data and isinstance(data, dict):
         ping = data.get("ping")
     if ping:
@@ -104,9 +124,8 @@ def handle_live_status(data=None):
         "info": "Send {ping: <epoch_seconds>} as payload to measure latency."
     }
     socketio.emit('live_status', resp, room=request.sid)
-    
+
 if __name__ == "__main__":
-    # Keep this aligned with `websocket/docker-compose.yml`
     print("\n" + "="*60)
     print("WebSocket Server Starting...")
     print("="*60)
