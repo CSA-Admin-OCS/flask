@@ -25,7 +25,6 @@ app.config['JSON_AS_ASCII'] = False  # Allow emojis, non-ASCII characters in JSO
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-
 # Allowed servers for cross-origin resource sharing (CORS)
 # Static allowed origins for local development
 allowed_origins = [
@@ -38,15 +37,15 @@ allowed_origins = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'https://open-coding-society.github.io',
+    # Regex pattern to match any subdomain of opencodingsociety.com
+    r'https://.*\.opencodingsociety\.com',
     'https://opencodingsociety.com',
-    'https://pages.opencodingsociety.com',
 ]
 
 cors = CORS(
    app,
    supports_credentials=True,
    origins=allowed_origins,
-   origin_regex=r'https://.*\.opencodingsociety\.com',
    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 
