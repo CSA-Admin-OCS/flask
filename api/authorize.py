@@ -46,6 +46,13 @@ def auth_required(roles=None):
             else:
                 token = request.cookies.get(current_app.config.get("JWT_TOKEN_NAME"))
                 if not token:
+                    auth_header = request.headers.get('Authorization', request.headers.get('authorization', '')) or ''
+                    if auth_header.startswith('Bearer '):
+                        token = auth_header.split(' ', 1)[1].strip()
+                    elif auth_header:
+                        token = auth_header.strip()
+
+                if not token:
                     return {
                         "message": "Authentication required. No session or token found.",
                         "data": None,

@@ -54,7 +54,11 @@ from __init__ import app
 from flask import Blueprint, request, jsonify, current_app, g
 from flask_restful import Api, Resource
 import requests
+import time
 from api.authorize import token_required
+
+MAX_GEMINI_RETRIES = 3
+GEMINI_RETRY_STATUS_CODES = {429, 503}
 
 # =============================================================================
 # BLUEPRINT SETUP
@@ -62,6 +66,151 @@ from api.authorize import token_required
 
 gemini_api = Blueprint('gemini_api', __name__, url_prefix='/api')
 api = Api(gemini_api)
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def analyze_log_text(log_text):
+    """Send a Jekyll build log to Gemini and return the parsed response."""
+    api_key = app.config.get('GEMINI_API_KEY')
+    server = app.config.get('GEMINI_SERVER')
+
+    if not api_key:
+        return {'message': 'Gemini API key not configured'}, 500
+
+    if not server:
+        return {'message': 'Gemini server not configured'}, 500
+
+    endpoint = f"{server}?key={api_key}"
+
+    system_prompt = """
+You are an AI assistant that analyzes Jekyll build logs.
+
+Your job:
+1. Determine whether the build succeeded or failed.
+2. If it failed, identify the most likely cause.
+3. Recommend what a student should do to fix the build or Makefile.
+4. Do not print the full log contents.
+5. Keep the answer concise and actionable.
+"""
+
+    log_text = log_text[-8000:]
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": f"{system_prompt}\n\n{log_text}"
+            }]
+        }]
+    }
+
+    current_app.logger.info("Gemini log analysis request made")
+
+    try:
+        attempt = 1
+        while True:
+            response = requests.post(
+                endpoint,
+                headers={'Content-Type': 'application/json'},
+                json=payload,
+                timeout=90
+            )
+
+            if response.status_code == 200:
+                break
+
+            error_details = {
+                'status_code': response.status_code,
+                'response_text': response.text,
+                'endpoint': endpoint,
+                'headers': dict(response.headers)
+            }
+            current_app.logger.error(f"Gemini API error: {error_details}")
+
+            if response.status_code in GEMINI_RETRY_STATUS_CODES and attempt < MAX_GEMINI_RETRIES:
+                retry_after = response.headers.get('Retry-After')
+                try:
+                    wait_seconds = int(retry_after)
+                except (TypeError, ValueError):
+                    wait_seconds = 2 ** attempt
+
+                current_app.logger.warning(
+                    f"Gemini rate limited (status={response.status_code}); retry {attempt}/{MAX_GEMINI_RETRIES} in {wait_seconds}s"
+                )
+                time.sleep(wait_seconds)
+                attempt += 1
+                continue
+
+            if response.status_code == 503:
+                return {
+                    'message': 'Gemini API is temporarily unavailable (503). Please try again later.',
+                    'error_code': 503,
+                    'details': 'The service may be overloaded or under maintenance.'
+                }, 503
+            elif response.status_code == 429:
+                return {
+                    'message': 'Rate limit exceeded. Please try again later.',
+                    'error_code': 429
+                }, 429
+            elif response.status_code == 400:
+                return {
+                    'message': 'Bad request to Gemini API. Please check your input.',
+                    'error_code': 400,
+                    'details': response.text
+                }, 400
+            else:
+                return {
+                    'message': f'Gemini API error: {response.status_code}',
+                    'error_code': response.status_code,
+                    'details': response.text
+                }, 500
+            current_app.logger.error(f"Gemini API error: {error_details}")
+
+            if response.status_code == 503:
+                return {
+                    'message': 'Gemini API is temporarily unavailable (503). Please try again later.',
+                    'error_code': 503,
+                    'details': 'The service may be overloaded or under maintenance.'
+                }, 503
+            elif response.status_code == 429:
+                return {
+                    'message': 'Rate limit exceeded. Please try again later.',
+                    'error_code': 429
+                }, 429
+            elif response.status_code == 400:
+                return {
+                    'message': 'Bad request to Gemini API. Please check your input.',
+                    'error_code': 400,
+                    'details': response.text
+                }, 400
+            else:
+                return {
+                    'message': f'Gemini API error: {response.status_code}',
+                    'error_code': response.status_code,
+                    'details': response.text
+                }, 500
+
+        result = response.json()
+        try:
+            generated_text = result['candidates'][0]['content']['parts'][0]['text']
+            return {
+                'success': True,
+                'analysis': generated_text.strip()
+            }
+        except (KeyError, IndexError) as e:
+            current_app.logger.error(f"Error parsing Gemini response: {e}")
+            return {
+                'success': False,
+                'message': 'Error parsing Gemini API response',
+                'raw_response': result
+            }, 500
+
+    except requests.RequestException as e:
+        current_app.logger.error(f"Error communicating with Gemini API: {e}")
+        return {'message': f'Error communicating with Gemini API: {str(e)}'}, 500
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error in log analysis: {e}")
+        return {'message': f'Unexpected error: {str(e)}'}, 500
 
 # =============================================================================
 # ENDPOINTS
@@ -285,114 +434,28 @@ class GeminiAPI:
             if not log:
                 return {'message': 'Log field is required'}, 400
             
-            # Get configuration
-            api_key = app.config.get('GEMINI_API_KEY')
-            server = app.config.get('GEMINI_SERVER')
-            
-            if not api_key:
-                return {'message': 'Gemini API key not configured'}, 500
-            
-            if not server:
-                return {'message': 'Gemini server not configured'}, 500
-            
-            # Build the endpoint URL
-            endpoint = f"{server}?key={api_key}"
-            
-            # System prompt for log analysis
-            system_prompt = """
-You are an AI assistant that analyzes Jekyll build logs.
+            return analyze_log_text(log)
 
-Your job:
-1. Determine whether the build succeeded or failed.
-2. If it failed, identify the most likely cause.
-3. Recommend what a student should do to fix the build or Makefile.
-4. Do not print the full log contents.
-5. Keep the answer concise and actionable.
-"""
-            
-            # Truncate log to prevent huge inputs
-            log = log[-8000:]
-            
-            # Prepare the request payload for Gemini API
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": f"{system_prompt}\n\n{log}"
-                    }]
-                }]
-            }
-            
-            # Log the request for auditing purposes
-            current_app.logger.info(f"Log analysis request made")
-            
+    class _LogUpload(Resource):
+        """
+        File upload endpoint - POST /api/gemini/upload
+        Accepts a file and analyzes its contents as a Jekyll build log.
+        """
+        def post(self):
+            if 'file' not in request.files:
+                return {'message': 'File is required'}, 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return {'message': 'File name is required'}, 400
+
             try:
-                # Make request to Gemini API
-                response = requests.post(
-                    endpoint,
-                    headers={'Content-Type': 'application/json'},
-                    json=payload,
-                    timeout=90  # 90 second timeout
-                )
-                
-                # Check if the request was successful
-                if response.status_code != 200:
-                    error_details = {
-                        'status_code': response.status_code,
-                        'response_text': response.text,
-                        'endpoint': endpoint,
-                        'headers': dict(response.headers)
-                    }
-                    current_app.logger.error(f"Gemini API error: {error_details}")
-                    
-                    # Handle specific error codes
-                    if response.status_code == 503:
-                        return {
-                            'message': 'Gemini API is temporarily unavailable (503). Please try again later.',
-                            'error_code': 503,
-                            'details': 'The service may be overloaded or under maintenance.'
-                        }, 503
-                    elif response.status_code == 429:
-                        return {
-                            'message': 'Rate limit exceeded. Please try again later.',
-                            'error_code': 429
-                        }, 429
-                    elif response.status_code == 400:
-                        return {
-                            'message': 'Bad request to Gemini API. Please check your input.',
-                            'error_code': 400,
-                            'details': response.text
-                        }, 400
-                    else:
-                        return {
-                            'message': f'Gemini API error: {response.status_code}',
-                            'error_code': response.status_code,
-                            'details': response.text
-                        }, 500
-                
-                # Parse the response
-                result = response.json()
-                
-                # Extract the generated text
-                try:
-                    generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                    return {
-                        'success': True,
-                        'analysis': generated_text.strip()
-                    }
-                except (KeyError, IndexError) as e:
-                    current_app.logger.error(f"Error parsing Gemini response: {e}")
-                    return {
-                        'success': False,
-                        'message': 'Error parsing Gemini API response',
-                        'raw_response': result
-                    }, 500
-                    
-            except requests.RequestException as e:
-                current_app.logger.error(f"Error communicating with Gemini API: {e}")
-                return {'message': f'Error communicating with Gemini API: {str(e)}'}, 500
+                content = file.read().decode('utf-8', errors='replace')
             except Exception as e:
-                current_app.logger.error(f"Unexpected error in log analysis: {e}")
-                return {'message': f'Unexpected error: {str(e)}'}, 500
+                current_app.logger.error(f"Failed to read uploaded file: {e}")
+                return {'message': f'File processing failed: {str(e)}'}, 400
+
+            return analyze_log_text(content)
 
     class _Debug(Resource):
         """
@@ -463,3 +526,4 @@ Your job:
     api.add_resource(_Health, '/gemini/health')    # Health check
     api.add_resource(_Debug, '/gemini/debug')      # Debug/troubleshooting
     api.add_resource(_LogAnalyzer, '/gemini/analyze-log')  # Log analysis endpoint
+    api.add_resource(_LogUpload, '/gemini/upload')  # File upload log analysis endpoint
