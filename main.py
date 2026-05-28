@@ -30,6 +30,7 @@ from api.data_export_import_api import data_export_import_api
 from api.leaderboard import dynamic_api, events_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from api.post import post_api  # Import the social media post API
+from api.congrats_api import congrats_api  # Import the congrats API
 from api.profile_game import profile_game_api  # CS Pathway Game profile persistence
 from api.snapshot_proxy import snapshot_proxy
 #from api.announcement import announcement_api ##temporary revert
@@ -90,6 +91,7 @@ app.register_blueprint(dynamic_api)  # Register the dynamic leaderboard API
 app.register_blueprint(events_api)  # Register the elementary leaderboard API
 app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
+app.register_blueprint(congrats_api)  # Register the congrats message API
 app.register_blueprint(profile_game_api)  # CS Pathway Game profile persistence
 app.register_blueprint(snapshot_proxy)  # Register the snapshot proxy API
 # app.register_blueprint(announcement_api) ##temporary revert
@@ -138,6 +140,14 @@ def login():
 @app.route('/studytracker')  # route for the study tracker page
 def studytracker():
     return render_template("studytracker.html")
+
+@app.route('/congrats')
+@login_required
+def congrats():
+    from model.congrats_message import CongratsMessage
+
+    messages = CongratsMessage.get_by_user(current_user.id)
+    return render_template("congrats.html", messages=messages, project="Congrats Messages")
     
 @app.route('/logout')
 def logout():
