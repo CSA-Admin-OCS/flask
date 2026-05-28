@@ -131,6 +131,8 @@ class UserAPI:
             # Accept either a list or a single string.
             if body.get('class') is not None:
                 cleaned_body['class'] = body.get('class')
+            if body.get('game_profile') is not None:
+                cleaned_body['game_profile'] = body.get('game_profile')
             
             # Remove None values
             cleaned_body = {k: v for k, v in cleaned_body.items() if v is not None}
