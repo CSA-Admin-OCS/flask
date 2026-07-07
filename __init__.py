@@ -80,9 +80,11 @@ app.config['MY_ROLE'] = os.environ.get('MY_ROLE') or 'User'
 SECRET_KEY = os.environ.get('SECRET_KEY') or 'SECRET_KEY' # secret key for session management
 SESSION_COOKIE_NAME = os.environ.get('SESSION_COOKIE_NAME') or 'sess_python_flask'
 JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
+JWT_TOKEN_MAX_AGE = int(os.environ.get('JWT_TOKEN_MAX_AGE') or 604800)  # Default: 1 week (604800 seconds)
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
 app.config['JWT_TOKEN_NAME'] = JWT_TOKEN_NAME
+app.config['JWT_TOKEN_MAX_AGE'] = JWT_TOKEN_MAX_AGE
 
 
 # Database settings

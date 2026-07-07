@@ -417,7 +417,7 @@ class UserAPI:
                             resp.set_cookie(
                                 current_app.config["JWT_TOKEN_NAME"],
                                 token,
-                                max_age=43200,  # 12 hours in seconds
+                                max_age=current_app.config["JWT_TOKEN_MAX_AGE"],
                                 secure=True,
                                 httponly=True,
                                 path='/',
@@ -428,7 +428,7 @@ class UserAPI:
                             resp.set_cookie(
                                 current_app.config["JWT_TOKEN_NAME"],
                                 token,
-                                max_age=43200,  # 12 hours in seconds
+                                max_age=current_app.config["JWT_TOKEN_MAX_AGE"],
                                 secure=False,
                                 httponly=False,  # Set to True for more security if JS access not needed
                                 path='/',
