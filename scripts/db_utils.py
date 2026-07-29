@@ -34,7 +34,7 @@ DEFAULT_DATA = {
         app.config.get('DEFAULT_UID', 'user'),
         'niko',
     ],
-    'sections': ['CSA', 'CSP', 'Robotics', 'CSSE'],
+    'sections': ['CSA', 'CSP', 'Robotics', 'CSSE', 'CSH'],
     'topics': [
         '/lessons/flask-introduction',
         '/hacks/javascript-basics',
