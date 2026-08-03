@@ -790,7 +790,8 @@ def initUsers():
         s2 = Section(name='Computer Science Principles', abbreviation='CSP')
         s3 = Section(name='Engineering Robotics', abbreviation='Robotics')
         s4 = Section(name='Computer Science and Software Engineering', abbreviation='CSSE')
-        sections = [s1, s2, s3, s4]
+        s5 = Section(name='Computer Science Honors', abbreviation='CSH')
+        sections = [s1, s2, s3, s4, s5]
         
         for section in sections:
             try:
