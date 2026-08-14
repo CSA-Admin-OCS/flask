@@ -17,9 +17,73 @@ from model.classroom import Classroom
 from model.feedback import Feedback
 from model.study import Study
 from model.persona import Persona, UserPersona
+from model.leaderboard import ScoreCounterEvent, ElementaryLeaderboardEvent
+from model.skill_snapshot import SkillSnapshot
 
 data_export_import_api = Blueprint('data_export_import_api', __name__, url_prefix='/api/export')
 api = Api(data_export_import_api)
+
+
+def _parse_dt(value):
+    """Parse an ISO-8601 timestamp emitted by a model read(); None if unusable."""
+    if not value:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        return None
+
+
+# Every persisted model, keyed by the data type name used across the migration
+# scripts. Kept in one place so /counts, the exporters and the importers cannot
+# drift apart -- a missing entry here is what silently loses a table.
+MIGRATED_MODELS = {
+    'sections':                 Section,
+    'users':                    User,
+    'topics':                   Topic,
+    'microblogs':               MicroBlog,
+    'posts':                    Post,
+    'classrooms':               Classroom,
+    'feedback':                 Feedback,
+    'study':                    Study,
+    'personas':                 Persona,
+    'user_personas':            UserPersona,
+    'leaderboard':              ScoreCounterEvent,
+    'elementary_leaderboard':   ElementaryLeaderboardEvent,
+    'skill_snapshots':          SkillSnapshot,
+}
+
+
+class ExportCounts(Resource):
+    """Row counts for every migrated table, used to verify a migration moved everything."""
+
+    @token_required()
+    def get(self):
+        current_user = g.current_user
+        if current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+
+        counts = {}
+        for name, model in MIGRATED_MODELS.items():
+            try:
+                counts[name] = model.query.count()
+            except Exception as e:
+                counts[name] = f'error: {e}'
+
+        # Association tables have no model class of their own.
+        try:
+            from model.classroom import classroom_student
+            counts['classroom_students'] = db.session.query(classroom_student).count()
+        except Exception as e:
+            counts['classroom_students'] = f'error: {e}'
+        try:
+            from model.user import UserSection
+            counts['user_sections'] = UserSection.query.count()
+        except Exception as e:
+            counts['user_sections'] = f'error: {e}'
+
+        return jsonify({'counts': counts})
 
 
 class ExportAllData(Resource):
@@ -54,6 +118,9 @@ class ExportAllData(Resource):
                 'study': self._export_study(),
                 'personas': self._export_personas(),
                 'user_personas': self._export_user_personas(),
+                'leaderboard': self._export_event_table(ScoreCounterEvent),
+                'elementary_leaderboard': self._export_event_table(ElementaryLeaderboardEvent),
+                'skill_snapshots': self._export_skill_snapshots(),
             }
 
             # Add metadata
@@ -155,6 +222,27 @@ class ExportAllData(Resource):
         personas = Persona.query.all()
         return [p.read() for p in personas]
 
+    def _export_event_table(self, model):
+        """Export one of the leaderboard event tables"""
+        return [
+            {
+                'id':        event.id,
+                'userUid':   event.user.uid if event.user else None,
+                'payload':   event._payload or {},
+                'timestamp': event._timestamp.isoformat() if event._timestamp else None,
+            }
+            for event in model.query.order_by(model.id).all()
+        ]
+
+    def _export_skill_snapshots(self):
+        """Export all skill snapshots"""
+        result = []
+        for snapshot in SkillSnapshot.query.order_by(SkillSnapshot.id).all():
+            data = snapshot.read()
+            data['userUid'] = snapshot.user.uid if snapshot.user else None
+            result.append(data)
+        return result
+
     def _export_user_personas(self):
         """Export user-persona associations"""
         user_personas = UserPersona.query.all()
@@ -217,6 +305,9 @@ class ImportAllData(Resource):
             'study': {'imported': 0, 'failed': 0, 'errors': []},
             'personas': {'imported': 0, 'failed': 0, 'errors': []},
             'user_personas': {'imported': 0, 'failed': 0, 'errors': []},
+            'leaderboard': {'imported': 0, 'failed': 0, 'errors': []},
+            'elementary_leaderboard': {'imported': 0, 'failed': 0, 'errors': []},
+            'skill_snapshots': {'imported': 0, 'failed': 0, 'errors': []},
         }
 
         try:
@@ -260,6 +351,19 @@ class ImportAllData(Resource):
             # 10. Study (depends on users)
             if 'study' in data:
                 results['study'] = self._import_study(data['study'])
+
+            # 11. Leaderboard events (depend on users, but tolerate orphans)
+            if 'leaderboard' in data:
+                results['leaderboard'] = self._import_leaderboard(data['leaderboard'])
+
+            if 'elementary_leaderboard' in data:
+                results['elementary_leaderboard'] = self._import_elementary_leaderboard(
+                    data['elementary_leaderboard']
+                )
+
+            # 12. Skill snapshots (depend on users)
+            if 'skill_snapshots' in data:
+                results['skill_snapshots'] = self._import_skill_snapshots(data['skill_snapshots'])
 
             return jsonify({
                 'message': 'Import completed',
@@ -320,7 +424,8 @@ class ImportAllData(Resource):
                     grade_data=user_data.get('grade_data') or user_data.get('gradeData'),
                     ap_exam=user_data.get('ap_exam') or user_data.get('apExam'),
                     school=user_data.get('school'),
-                    classes=user_data.get('class') or user_data.get('_class')
+                    classes=user_data.get('class') or user_data.get('_class'),
+                    game_profile=user_data.get('game_profile') or user_data.get('gameProfile')
                 )
 
                 # Set email via property (not a constructor param)
@@ -631,6 +736,83 @@ class ImportAllData(Resource):
 
         return {'imported': imported, 'failed': failed, 'errors': errors}
 
+    def _import_events(self, events_data, model, label):
+        """Import leaderboard events, preserving the original timestamp."""
+        imported = 0
+        failed = 0
+        errors = []
+
+        for event_data in events_data:
+            try:
+                user_uid = event_data.get('userUid')
+                user = User.query.filter_by(_uid=user_uid).first() if user_uid else None
+
+                # user_id is nullable on both event tables: an event whose author
+                # is gone is still real history and must not be dropped.
+                event = model(
+                    payload=event_data.get('payload') or {},
+                    user_id=user.id if user else None,
+                )
+                timestamp = _parse_dt(event_data.get('timestamp'))
+                if timestamp:
+                    event._timestamp = timestamp
+
+                db.session.add(event)
+                db.session.commit()
+                imported += 1
+            except Exception as e:
+                db.session.rollback()
+                failed += 1
+                errors.append(f"{label}: {str(e)}")
+
+        return {'imported': imported, 'failed': failed, 'errors': errors}
+
+    def _import_leaderboard(self, events_data):
+        """Import SCORE_COUNTER leaderboard events"""
+        return self._import_events(events_data, ScoreCounterEvent, 'Leaderboard')
+
+    def _import_elementary_leaderboard(self, events_data):
+        """Import elementary leaderboard events"""
+        return self._import_events(events_data, ElementaryLeaderboardEvent, 'ElementaryLeaderboard')
+
+    def _import_skill_snapshots(self, snapshots_data):
+        """Import skill snapshots"""
+        imported = 0
+        failed = 0
+        errors = []
+
+        for snapshot_data in snapshots_data:
+            try:
+                user_uid = snapshot_data.get('userUid')
+                user = User.query.filter_by(_uid=user_uid).first() if user_uid else None
+                if not user:
+                    # user_id is NOT NULL here, so an orphan snapshot cannot be stored.
+                    failed += 1
+                    errors.append(f"SkillSnapshot: no user for uid {user_uid!r}")
+                    continue
+
+                snapshot = SkillSnapshot(
+                    user_id=user.id,
+                    project_name=snapshot_data.get('project_name'),
+                    coding_ability=snapshot_data.get('coding_ability'),
+                    collaboration=snapshot_data.get('collaboration'),
+                    problem_solving=snapshot_data.get('problem_solving'),
+                    initiative=snapshot_data.get('initiative'),
+                )
+                snapshot_date = _parse_dt(snapshot_data.get('snapshot_date'))
+                if snapshot_date:
+                    snapshot.snapshot_date = snapshot_date
+
+                db.session.add(snapshot)
+                db.session.commit()
+                imported += 1
+            except Exception as e:
+                db.session.rollback()
+                failed += 1
+                errors.append(f"SkillSnapshot: {str(e)}")
+
+        return {'imported': imported, 'failed': failed, 'errors': errors}
+
 
 # Individual export endpoints for chunked exports
 class ExportSections(Resource):
@@ -859,6 +1041,82 @@ class ExportUserPersonas(Resource):
         })
 
 
+def _export_events(model, key):
+    """Paginated export shared by the two leaderboard event tables."""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+
+    pagination = model.query.order_by(model.id).paginate(page=page, per_page=per_page, error_out=False)
+
+    result = []
+    for event in pagination.items:
+        result.append({
+            'id':        event.id,
+            'userUid':   event.user.uid if event.user else None,
+            'payload':   event._payload or {},
+            'timestamp': event._timestamp.isoformat() if event._timestamp else None,
+        })
+
+    return jsonify({
+        key: result,
+        'count': len(result),
+        'total': pagination.total,
+        'page': page,
+        'per_page': per_page,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev
+    })
+
+
+class ExportLeaderboard(Resource):
+    """Export the SCORE_COUNTER leaderboard events ('leaderboard' table)."""
+    @token_required()
+    def get(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+        return _export_events(ScoreCounterEvent, 'leaderboard')
+
+
+class ExportElementaryLeaderboard(Resource):
+    """Export the elementary leaderboard events."""
+    @token_required()
+    def get(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+        return _export_events(ElementaryLeaderboardEvent, 'elementary_leaderboard')
+
+
+class ExportSkillSnapshots(Resource):
+    """Export skill snapshots."""
+    @token_required()
+    def get(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+
+        pagination = SkillSnapshot.query.order_by(SkillSnapshot.id).paginate(
+            page=page, per_page=per_page, error_out=False
+        )
+
+        result = []
+        for snapshot in pagination.items:
+            data = snapshot.read()
+            data['userUid'] = snapshot.user.uid if snapshot.user else None
+            result.append(data)
+
+        return jsonify({
+            'skill_snapshots': result,
+            'count': len(result),
+            'total': pagination.total,
+            'page': page,
+            'per_page': per_page,
+            'has_next': pagination.has_next,
+            'has_prev': pagination.has_prev
+        })
+
+
 # ============ Chunked Import Endpoints ============
 # These allow importing data one type at a time to avoid timeouts
 
@@ -1062,9 +1320,66 @@ class ImportUserPersonas(Resource):
             return {'message': f'Import failed: {str(e)}'}, 500
 
 
+class ImportLeaderboard(Resource):
+    """Import SCORE_COUNTER leaderboard events only"""
+    @token_required()
+    def post(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+
+        data = request.get_json()
+        try:
+            result = ImportAllData()._import_leaderboard(data.get('leaderboard', []))
+            db.session.commit()
+            return jsonify({'leaderboard': result, 'message': 'Leaderboard import complete'})
+        except Exception as e:
+            db.session.rollback()
+            return {'message': f'Import failed: {str(e)}'}, 500
+
+
+class ImportElementaryLeaderboard(Resource):
+    """Import elementary leaderboard events only"""
+    @token_required()
+    def post(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+
+        data = request.get_json()
+        try:
+            result = ImportAllData()._import_elementary_leaderboard(
+                data.get('elementary_leaderboard', [])
+            )
+            db.session.commit()
+            return jsonify({
+                'elementary_leaderboard': result,
+                'message': 'Elementary leaderboard import complete',
+            })
+        except Exception as e:
+            db.session.rollback()
+            return {'message': f'Import failed: {str(e)}'}, 500
+
+
+class ImportSkillSnapshots(Resource):
+    """Import skill snapshots only"""
+    @token_required()
+    def post(self):
+        if g.current_user.role != 'Admin':
+            return {'message': 'Admin privileges required'}, 403
+
+        data = request.get_json()
+        try:
+            result = ImportAllData()._import_skill_snapshots(data.get('skill_snapshots', []))
+            db.session.commit()
+            return jsonify({'skill_snapshots': result, 'message': 'Skill snapshots import complete'})
+        except Exception as e:
+            db.session.rollback()
+            return {'message': f'Import failed: {str(e)}'}, 500
+
+
 # Register endpoints
 api.add_resource(ExportAllData, '/all')
 api.add_resource(ImportAllData, '/import')
+api.add_resource(ExportCounts, '/counts')
 
 # Chunked export endpoints
 api.add_resource(ExportSections, '/sections')
@@ -1077,6 +1392,9 @@ api.add_resource(ExportFeedback, '/feedback')
 api.add_resource(ExportStudy, '/study')
 api.add_resource(ExportPersonas, '/personas')
 api.add_resource(ExportUserPersonas, '/user_personas')
+api.add_resource(ExportLeaderboard, '/leaderboard')
+api.add_resource(ExportElementaryLeaderboard, '/elementary_leaderboard')
+api.add_resource(ExportSkillSnapshots, '/skill_snapshots')
 
 # Chunked import endpoints (POST to same paths as export)
 api.add_resource(ImportSections, '/import/sections')
@@ -1089,3 +1407,6 @@ api.add_resource(ImportFeedback, '/import/feedback')
 api.add_resource(ImportStudy, '/import/study')
 api.add_resource(ImportPersonas, '/import/personas')
 api.add_resource(ImportUserPersonas, '/import/user_personas')
+api.add_resource(ImportLeaderboard, '/import/leaderboard')
+api.add_resource(ImportElementaryLeaderboard, '/import/elementary_leaderboard')
+api.add_resource(ImportSkillSnapshots, '/import/skill_snapshots')

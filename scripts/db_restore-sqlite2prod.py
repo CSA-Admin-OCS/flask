@@ -26,28 +26,39 @@ import requests
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from main import app, db
-from db_utils import authenticate, filter_default_data, BASE_URL, UID, PASSWORD
+from db_utils import (
+    authenticate, filter_default_data, fetch_remote_counts, local_counts,
+    report_reconciliation, BASE_URL, UID, PASSWORD,
+)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 LOCAL_JSON = "instance/data.json"
 
-# Import endpoints (order matters: sections and users first)
+# Import endpoints (order matters: sections and users first).
+# Must cover every table in model/ -- anything missing here is not restored to
+# production after db_init.py has dropped it.
 IMPORT_ENDPOINTS = {
-    'sections':     '/api/export/import/sections',
-    'users':        '/api/export/import/users',
-    'topics':       '/api/export/import/topics',
-    'microblogs':   '/api/export/import/microblogs',
-    'posts':        '/api/export/import/posts',
-    'classrooms':   '/api/export/import/classrooms',
-    'feedback':     '/api/export/import/feedback',
-    'study':        '/api/export/import/study',
-    'personas':     '/api/export/import/personas',
-    'user_personas':'/api/export/import/user_personas',
+    'sections':               '/api/export/import/sections',
+    'users':                  '/api/export/import/users',
+    'topics':                 '/api/export/import/topics',
+    'microblogs':             '/api/export/import/microblogs',
+    'posts':                  '/api/export/import/posts',
+    'classrooms':             '/api/export/import/classrooms',
+    'feedback':               '/api/export/import/feedback',
+    'study':                  '/api/export/import/study',
+    'personas':               '/api/export/import/personas',
+    'user_personas':          '/api/export/import/user_personas',
+    'leaderboard':            '/api/export/import/leaderboard',
+    'elementary_leaderboard': '/api/export/import/elementary_leaderboard',
+    'skill_snapshots':        '/api/export/import/skill_snapshots',
 }
 
 # Data types large enough to need batched uploads
-LARGE_DATA_TYPES = {'users', 'microblogs', 'posts', 'user_personas', 'personas'}
+LARGE_DATA_TYPES = {
+    'users', 'microblogs', 'posts', 'user_personas', 'personas',
+    'leaderboard', 'elementary_leaderboard', 'skill_snapshots',
+}
 BATCH_SIZE = 50
 
 # ── Local data readers ─────────────────────────────────────────────────────────
@@ -62,6 +73,8 @@ def read_local_data_from_db():
         from model.feedback import Feedback
         from model.study import Study
         from model.persona import Persona, UserPersona
+        from model.leaderboard import ScoreCounterEvent, ElementaryLeaderboardEvent
+        from model.skill_snapshot import SkillSnapshot
 
         with app.app_context():
             print("  Reading ALL data from local database...")
@@ -143,6 +156,26 @@ def read_local_data_from_db():
                     'selectedAt':   up.selected_at.isoformat() if up.selected_at else None,
                 })
             print(f"    Found {len(all_data['user_personas'])} user-persona associations")
+
+            for key, model in (('leaderboard', ScoreCounterEvent),
+                               ('elementary_leaderboard', ElementaryLeaderboardEvent)):
+                all_data[key] = [
+                    {
+                        'id':        event.id,
+                        'userUid':   event.user.uid if event.user else None,
+                        'payload':   event._payload or {},
+                        'timestamp': event._timestamp.isoformat() if event._timestamp else None,
+                    }
+                    for event in model.query.order_by(model.id).all()
+                ]
+                print(f"    Found {len(all_data[key])} {key} events")
+
+            all_data['skill_snapshots'] = []
+            for snapshot in SkillSnapshot.query.order_by(SkillSnapshot.id).all():
+                snapshot_data = snapshot.read()
+                snapshot_data['userUid'] = snapshot.user.uid if snapshot.user else None
+                all_data['skill_snapshots'].append(snapshot_data)
+            print(f"    Found {len(all_data['skill_snapshots'])} skill snapshots")
 
             return all_data, None
 
@@ -227,6 +260,12 @@ def import_all_data(all_data, cookies):
                 print(f"      - {err}")
             if len(combined['errors']) > 3:
                 print(f"      ... and {len(combined['errors']) - 3} more errors")
+            # Batched failures used to be dropped here, so a batched upload could
+            # lose rows and still report overall success.
+            if combined['failed'] > 0:
+                failed_endpoints.append(
+                    (data_type, combined['errors'][0] if combined['errors'] else "unknown")
+                )
 
         else:
             print(f"  Uploading {data_type} ({len(data_list)} records)...", end=" ", flush=True)
@@ -312,7 +351,37 @@ def main():
             print(f"  {icon} {data_type}: {imp} imported, {fail} failed")
 
     print("=" * 60)
-    return 0 if success else 1
+
+    # Step 4: Reconcile local against production, table by table.
+    print("\n=== Step 4: Verifying production matches local ===")
+    reconciled = verify_push(cookies)
+
+    print("=" * 60)
+    if success and reconciled:
+        print("✓ Production reconciled against local - migration complete.")
+        return 0
+
+    if not reconciled:
+        print("✗ Production does NOT match local. Tables marked MISSING above did")
+        print("  not fully transfer. Do not tear down your local copy - it is")
+        print("  currently the only complete copy of that data.")
+    return 1
+
+
+def verify_push(cookies):
+    """Compare the local database against production after the upload."""
+    remote, err = fetch_remote_counts(cookies)
+    if err:
+        print(f"  Could not fetch production counts: {err}")
+        print("  (/api/export/counts ships with this change - is production running it yet?)")
+        return False
+
+    with app.app_context():
+        local = local_counts()
+
+    # Seed users/topics were filtered out of the upload, but production created
+    # its own copies via generate_data(), so those rows exist on both sides.
+    return report_reconciliation(local, remote, 'local', 'production')
 
 
 if __name__ == "__main__":
