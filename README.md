@@ -223,43 +223,68 @@ The key files and directories in this project are in these online articles.
 
 ## Database Management Workflow with Scripts
 
-If you are working with the database, follow the below procedure to safely interact with the remote DB while applying changes locally. Certain scripts require flask to be running while others don't, so follow the instructions that the scripts provide.
+Production runs on **MySQL (AWS RDS)**; local development runs on SQLite. Data moves
+between them over the admin-only `/api/export/*` endpoints, so **both sides must be
+running the same code** before you migrate.
 
-Note, steps 1,2,3,5 are on your development (LOCAL) server. You need to update your .env on development server and be sure all PRs are completed, pulled, and tested before you start pushing to production.
+Critically: step 4 runs `db_init.py` on production, which does a `drop_all()`. Anything
+not covered by the export/import endpoints is destroyed there and never comes back. The
+scripts now reconcile every table against `/api/export/counts` and exit non-zero on any
+shortfall -- do not ignore that.
 
-0. Be sure ADMIN_PASSWORD is set in .env.  You will need a venv for the python scripts.
+0. Be sure `ADMIN_UID` / `ADMIN_PASSWORD` in `.env` are the **production** admin
+   credentials. You will need a venv for the python scripts.
 
-1. Initialize your local DB with clean data. For example, this would be good to see that a schema update works correctly.
+1. Initialize your local DB with clean data, to confirm the new schema builds:
    ```bash
    python scripts/db_init.py
    ```
 
-2. Pull the database content from the remote DB onto your local machine. This allows you to work with real data and test that real data works with your local changes.
+2. Pull production data to local. This fetches every table, then compares local row
+   counts against production table by table:
    ```bash
    python scripts/db_migrate-prod2sqlite.py
    ```
+   A non-zero exit means the pull was incomplete. Fix it before going further -- pushing
+   an incomplete pull back to production deletes the difference.
 
 3. TEST TEST TEST! Make sure your changes work correctly with the local DB.
 
-4. Now go onto the remote DB and back up the db using `cp sqlite.db backups/sqlite_year-month-day.db` in the volumes directory of the flask directory on cockpit. Then, run `git pull` to ensure that flask has been updated with the latest code. Then, run `python scripts/db_init.py` again to ensure that the remote DB schema is up to date with the latest code.
+4. On production (cockpit, `open/flask`):
+   - Update code: `git pull`  (this must include the `/api/export/counts` endpoint and the
+     leaderboard / skill-snapshot export endpoints, or step 5 cannot verify itself)
+   - Restart flask so the new endpoints are live
+   - Update schema: `python scripts/db_init.py`
 
-5. Once you are satisfied with your changes, push the local DB content to the remote DB. This requires authentication, so you need to replace the ADMIN_PASSWORD in the .env file of "flask" with the production admin password.
+5. Push local data back to production:
    ```bash
    python scripts/db_restore-sqlite2prod.py
    ```
+   This re-reads production's counts afterwards and reports any table that did not fully
+   transfer. Keep your local copy until it reports a clean reconciliation -- until then
+   your local database is the only complete copy of that data.
+
+### Tables covered by the migration
+
+`sections`, `users`, `topics`, `microblogs`, `posts`, `classrooms`, `feedback`, `study`,
+`personas`, `user_personas`, `leaderboard`, `elementary_leaderboard`, `skill_snapshots`,
+plus the `user_sections` and `classroom_students` association rows.
+
+**Adding a new model?** It must be added in three places or its data is lost on the next
+migration: `MIGRATED_MODELS` plus export/import endpoints in
+`api/data_export_import_api.py`, `EXPORT_ENDPOINTS` + a loader in
+`scripts/db_migrate-prod2sqlite.py`, and `IMPORT_ENDPOINTS` + a reader in
+`scripts/db_restore-sqlite2prod.py`. `/api/export/counts` is what catches the omission.
 
 ### Condensed DB/Schema update simple steps
 *(a copy of what's above, just condensed)*
 
 1. Initialize local DB: `python scripts/db_init.py`
 
-2. Pull production data to local: `python scripts/db_migrate-prod2sqlite.py`
+2. Pull production data to local: `python scripts/db_migrate-prod2sqlite.py` (must exit 0)
 
 3. Test your changes locally
 
-4. On production server (in cockpit):
-   - Backup DB in volumes directory: `cp sqlite.db backups/sqlite_year-month-day.db`
-   - Update code: `git pull`
-   - Update schema: `python scripts/db_init.py`
+4. On production: `git pull`, restart flask, then `python scripts/db_init.py`
 
-5. Push local changes to production: `python scripts/db_restore-sqlite2prod.py` (Requires admin password from production in .env)
+5. Push local changes to production: `python scripts/db_restore-sqlite2prod.py` (must exit 0)

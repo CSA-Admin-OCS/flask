@@ -34,29 +34,41 @@ from sqlalchemy.exc import OperationalError
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from main import app, db, initUsers
-from db_utils import authenticate, filter_default_data, BASE_URL, UID, PASSWORD
+from db_utils import (
+    authenticate, filter_default_data, fetch_remote_counts, local_counts,
+    report_reconciliation, BASE_URL, UID, PASSWORD,
+)
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 PERSISTENCE_PREFIX = "instance"
 JSON_DATA = f"{PERSISTENCE_PREFIX}/data.json"
 
-# Export endpoints (one per data type)
+# Export endpoints (one per data type).
+# Every table in model/ must appear here -- production runs db_init.py (which
+# does a drop_all) before the data is pushed back, so a table missing from this
+# map is destroyed on production and never restored.
 EXPORT_ENDPOINTS = {
-    'sections':     '/api/export/sections',
-    'users':        '/api/export/users',
-    'topics':       '/api/export/topics',
-    'microblogs':   '/api/export/microblogs',
-    'posts':        '/api/export/posts',
-    'classrooms':   '/api/export/classrooms',
-    'feedback':     '/api/export/feedback',
-    'study':        '/api/export/study',
-    'personas':     '/api/export/personas',
-    'user_personas':'/api/export/user_personas',
+    'sections':               '/api/export/sections',
+    'users':                  '/api/export/users',
+    'topics':                 '/api/export/topics',
+    'microblogs':             '/api/export/microblogs',
+    'posts':                  '/api/export/posts',
+    'classrooms':             '/api/export/classrooms',
+    'feedback':               '/api/export/feedback',
+    'study':                  '/api/export/study',
+    'personas':               '/api/export/personas',
+    'user_personas':          '/api/export/user_personas',
+    'leaderboard':            '/api/export/leaderboard',
+    'elementary_leaderboard': '/api/export/elementary_leaderboard',
+    'skill_snapshots':        '/api/export/skill_snapshots',
 }
 
 # Data types that require paginated fetching
-PAGINATED_TYPES = {'users', 'microblogs', 'posts', 'topics', 'personas', 'user_personas'}
+PAGINATED_TYPES = {
+    'users', 'microblogs', 'posts', 'topics', 'personas', 'user_personas',
+    'leaderboard', 'elementary_leaderboard', 'skill_snapshots',
+}
 
 # ── Database backup / creation helpers ────────────────────────────────────────
 
@@ -243,13 +255,17 @@ def extract_all_data(cookies):
         for dt, err in failed_endpoints:
             print(f"    - {dt}: {err}")
 
-        critical_failed = [dt for dt, _ in failed_endpoints if dt in {'users', 'sections'}]
-        if critical_failed:
+        # Production is wiped by db_init.py before this data is pushed back, so a
+        # partial export is a partial restore. Every endpoint is critical.
+        # Set ALLOW_PARTIAL_EXPORT=true only to inspect a broken endpoint.
+        if os.environ.get('ALLOW_PARTIAL_EXPORT') != 'true':
             return None, {
-                'message': f'Critical endpoints failed: {", ".join(critical_failed)}',
+                'message': f'Export incomplete: {", ".join(dt for dt, _ in failed_endpoints)}',
                 'code': 500,
-                'error': 'Cannot proceed without users and sections data',
+                'error': 'Refusing to continue with a partial export. '
+                         'Fix the endpoint, or set ALLOW_PARTIAL_EXPORT=true to override.',
             }
+        print("  ALLOW_PARTIAL_EXPORT=true - continuing with an INCOMPLETE export")
 
     return all_data, None
 
@@ -319,6 +335,7 @@ def load_users(users_data):
                 ap_exam=user_data.get('ap_exam') or user_data.get('apExam'),
                 school=user_data.get('school'),
                 classes=user_data.get('class') or user_data.get('_class'),
+                game_profile=user_data.get('game_profile') or user_data.get('gameProfile'),
             )
             if user_data.get('email'):
                 user.email = user_data['email']
@@ -623,6 +640,98 @@ def load_user_personas(user_personas_data):
     print(f"  Loaded {loaded} user-persona associations.")
 
 
+def _parse_dt(value):
+    """Parse an ISO-8601 timestamp from an export payload; None if unusable."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (TypeError, ValueError):
+        return None
+
+
+def load_events(events_data, model, label):
+    """Load leaderboard events, preserving their original timestamps."""
+    from model.user import User
+
+    loaded = skipped = 0
+    for event_data in events_data:
+        try:
+            user_uid = event_data.get('userUid')
+            user = User.query.filter_by(_uid=user_uid).first() if user_uid else None
+
+            # user_id is nullable: an event whose author is gone is still history.
+            event = model(
+                payload=event_data.get('payload') or {},
+                user_id=user.id if user else None,
+            )
+            timestamp = _parse_dt(event_data.get('timestamp'))
+            if timestamp:
+                event._timestamp = timestamp
+
+            db.session.add(event)
+            db.session.commit()
+            loaded += 1
+        except Exception as e:
+            db.session.rollback()
+            print(f"  Error loading {label} event: {e}")
+            skipped += 1
+
+    if skipped:
+        print(f"  Skipped {skipped} {label} events")
+    print(f"  Loaded {loaded} {label} events.")
+
+
+def load_leaderboard(events_data):
+    from model.leaderboard import ScoreCounterEvent
+    load_events(events_data, ScoreCounterEvent, 'leaderboard')
+
+
+def load_elementary_leaderboard(events_data):
+    from model.leaderboard import ElementaryLeaderboardEvent
+    load_events(events_data, ElementaryLeaderboardEvent, 'elementary leaderboard')
+
+
+def load_skill_snapshots(snapshots_data):
+    from model.skill_snapshot import SkillSnapshot
+    from model.user import User
+
+    loaded = skipped = 0
+    for snapshot_data in snapshots_data:
+        try:
+            user_uid = snapshot_data.get('userUid')
+            user = User.query.filter_by(_uid=user_uid).first() if user_uid else None
+            if not user:
+                # user_id is NOT NULL, so an orphan snapshot cannot be stored.
+                print(f"  Skipping skill snapshot - no user for uid {user_uid!r}")
+                skipped += 1
+                continue
+
+            snapshot = SkillSnapshot(
+                user_id=user.id,
+                project_name=snapshot_data.get('project_name'),
+                coding_ability=snapshot_data.get('coding_ability'),
+                collaboration=snapshot_data.get('collaboration'),
+                problem_solving=snapshot_data.get('problem_solving'),
+                initiative=snapshot_data.get('initiative'),
+            )
+            snapshot_date = _parse_dt(snapshot_data.get('snapshot_date'))
+            if snapshot_date:
+                snapshot.snapshot_date = snapshot_date
+
+            db.session.add(snapshot)
+            db.session.commit()
+            loaded += 1
+        except Exception as e:
+            db.session.rollback()
+            print(f"  Error loading skill snapshot: {e}")
+            skipped += 1
+
+    if skipped:
+        print(f"  Skipped {skipped} skill snapshots")
+    print(f"  Loaded {loaded} skill snapshots.")
+
+
 def load_all(all_data):
     """Load all data types into the local database in dependency order."""
     user_uid_map = {u.get('id'): u.get('uid') for u in all_data.get('users', []) if u.get('id') and u.get('uid')}
@@ -639,6 +748,11 @@ def load_all(all_data):
         ('classrooms',    lambda: load_classrooms(all_data.get('classrooms', []), user_uid_map)),
         ('feedback',      lambda: load_feedback(all_data.get('feedback', []))),
         ('study',         lambda: load_study(all_data.get('study', []), user_uid_map)),
+        ('leaderboard',   lambda: load_leaderboard(all_data.get('leaderboard', []))),
+        ('elementary_leaderboard',
+                          lambda: load_elementary_leaderboard(all_data.get('elementary_leaderboard', []))),
+        ('skill_snapshots',
+                          lambda: load_skill_snapshots(all_data.get('skill_snapshots', []))),
     ]
 
     for name, loader in loaders:
@@ -716,6 +830,14 @@ def main():
         count = len(data) if isinstance(data, list) else 1
         print(f"  {key}: {count if data else 'No'} records")
 
+    # Count production's own copies of the seed users before they are filtered
+    # out, so the verification step can account for them.
+    from db_utils import DEFAULT_DATA
+    seed_uids = [uid for uid in DEFAULT_DATA['users'] if uid]
+    prod_seed_users = sum(
+        1 for u in (all_data.get('users') or []) if u.get('uid') in seed_uids
+    )
+
     # Filter default seed data
     print("\n=== Filtering out default/test data ===")
     all_data = filter_default_data(all_data)
@@ -741,7 +863,42 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-    print("\n=== Database initialized successfully! ===")
+    # Step 4: Verify the local database matches production table by table
+    print("\n=== Step 4: Verifying the pull is complete ===")
+    complete = verify_pull(cookies, prod_seed_users)
+
+    if complete:
+        print("\n=== Database initialized successfully - all tables reconciled ===")
+        return
+
+    print("\n=== WARNING: local database does NOT match production ===")
+    print("Do NOT push this back to production: the missing rows would be lost.")
+    print("Investigate the tables marked MISSING above, then re-run this script.")
+    sys.exit(1)
+
+
+def verify_pull(cookies, prod_seed_users):
+    """Compare production row counts against the freshly loaded local database."""
+    if cookies is None:
+        print("  Skipped: data came from the local JSON fallback, not production.")
+        return True
+
+    remote, err = fetch_remote_counts(cookies)
+    if err:
+        print(f"  Could not fetch production counts: {err}")
+        print("  (/api/export/counts ships with this change - is production running it yet?)")
+        return False
+
+    with app.app_context():
+        local = local_counts()
+
+    # filter_default_data() dropped production's seed users and initUsers()
+    # recreated them locally, so that many users are legitimately "missing".
+    from db_utils import DEFAULT_DATA
+    seeded_locally = len({uid for uid in DEFAULT_DATA['users'] if uid})
+    expected_deficit = {'users': prod_seed_users - seeded_locally}
+
+    return report_reconciliation(remote, local, 'production', 'local', expected_deficit)
 
 
 if __name__ == "__main__":
