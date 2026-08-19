@@ -227,20 +227,33 @@ Production runs on **MySQL (AWS RDS)**; local development runs on SQLite. Data m
 between them over the admin-only `/api/export/*` endpoints, so **both sides must be
 running the same code** before you migrate.
 
-Critically: step 4 runs `db_init.py` on production, which does a `drop_all()`. Anything
+Critically: step 5 runs `db_init.py` on production, which does a `drop_all()`. Anything
 not covered by the export/import endpoints is destroyed there and never comes back. The
 scripts now reconcile every table against `/api/export/counts` and exit non-zero on any
 shortfall -- do not ignore that.
 
+**The code deploy comes first, before the pull.** The pull script calls
+`/api/export/counts` and the leaderboard / skill-snapshot export endpoints, and none of
+them exist on production until you deploy. Deploying the code alone is non-destructive --
+the app only creates or drops tables when `db_init.py` is run explicitly -- so this is
+safe, and it is the only order in which the pull can verify itself.
+
 0. Be sure `ADMIN_UID` / `ADMIN_PASSWORD` in `.env` are the **production** admin
    credentials. You will need a venv for the python scripts.
 
-1. Initialize your local DB with clean data, to confirm the new schema builds:
+1. Deploy the code to production (cockpit, `open/flask`), but **not** the schema:
    ```bash
-   python scripts/db_init.py
+   git pull
+   docker compose up -d --build
    ```
+   Do not run `db_init.py` yet. Production keeps its current data and gains the new
+   endpoints.
 
-2. Pull production data to local. This fetches every table, then compares local row
+2. Confirm the endpoints are live: authenticate as the production admin and hit
+   `/api/export/counts`. It should return a count for every table below. Keep that
+   output -- it is your before-picture.
+
+3. Pull production data to local. This fetches every table, then compares local row
    counts against production table by table:
    ```bash
    python scripts/db_migrate-prod2sqlite.py
@@ -248,15 +261,17 @@ shortfall -- do not ignore that.
    A non-zero exit means the pull was incomplete. Fix it before going further -- pushing
    an incomplete pull back to production deletes the difference.
 
-3. TEST TEST TEST! Make sure your changes work correctly with the local DB.
+4. TEST TEST TEST! Make sure your changes work correctly with the local DB. This is the
+   last point at which production is still intact.
 
-4. On production (cockpit, `open/flask`):
-   - Update code: `git pull`  (this must include the `/api/export/counts` endpoint and the
-     leaderboard / skill-snapshot export endpoints, or step 5 cannot verify itself)
-   - Restart flask so the new endpoints are live
-   - Update schema: `python scripts/db_init.py`
+5. Update the schema on production:
+   ```bash
+   python scripts/db_init.py
+   ```
+   This takes a `mysqldump` to `instance/backups/` first and aborts if that fails, then
+   runs `drop_all()`, `create_all()` and the seed data. Note the dump path it prints.
 
-5. Push local data back to production:
+6. Push local data back to production:
    ```bash
    python scripts/db_restore-sqlite2prod.py
    ```
@@ -276,15 +291,25 @@ migration: `MIGRATED_MODELS` plus export/import endpoints in
 `scripts/db_migrate-prod2sqlite.py`, and `IMPORT_ENDPOINTS` + a reader in
 `scripts/db_restore-sqlite2prod.py`. `/api/export/counts` is what catches the omission.
 
+### The full runbook
+
+The step-by-step production procedure -- with the gates, the rollback paths, and the audit
+of what was wrong with the old scripts -- lives at
+<https://pages.opencodingsociety.com/documentation/migration-runbook>. Read it before your
+first migration; this section is the summary.
+
 ### Condensed DB/Schema update simple steps
 *(a copy of what's above, just condensed)*
 
-1. Initialize local DB: `python scripts/db_init.py`
+1. On production: `git pull`, then `docker compose up -d --build`. Do **not** run
+   `db_init.py` yet.
 
-2. Pull production data to local: `python scripts/db_migrate-prod2sqlite.py` (must exit 0)
+2. Confirm `/api/export/counts` responds as the production admin.
 
-3. Test your changes locally
+3. Pull production data to local: `python scripts/db_migrate-prod2sqlite.py` (must exit 0)
 
-4. On production: `git pull`, restart flask, then `python scripts/db_init.py`
+4. Test your changes locally
 
-5. Push local changes to production: `python scripts/db_restore-sqlite2prod.py` (must exit 0)
+5. On production, update the schema: `python scripts/db_init.py`
+
+6. Push local changes to production: `python scripts/db_restore-sqlite2prod.py` (must exit 0)
