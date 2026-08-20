@@ -15,14 +15,22 @@ user_api = Blueprint('user_api', __name__,
 # API docs https://flask-restful.readthedocs.io/en/latest/api.html
 api = Api(user_api)
 
-class UserAPI:        
+def _without_password(user_data):
+    """Strip the password hash before a user dict goes out over a general-purpose
+    API response. The admin-only backup/export endpoints in data_export_import_api.py
+    call user.read() directly instead of this, since restoring from a backup needs
+    the hash to round-trip."""
+    user_data.pop('password', None)
+    return user_data
+
+class UserAPI:
     class _ID(Resource):  # Individual identification API operation
         @token_required()
         def get(self):
             ''' Retrieve the current user from the token_required authentication check '''
             current_user = g.current_user
             ''' Return the current user as a json object with role information '''
-            user_data = current_user.read()
+            user_data = _without_password(current_user.read())
             # Add role information to response
             user_data['role'] = current_user.role
             user_data['is_admin'] = current_user.is_admin()
@@ -151,13 +159,13 @@ class UserAPI:
                     db_user = User.query.filter_by(_uid=uid).first()
                     if db_user:
                         #print(f"User exists in DB but create returned None: {db_user.uid}")
-                        return jsonify(db_user.read())  # Return the user anyway
+                        return jsonify(_without_password(db_user.read()))  # Return the user anyway
                     else:
                         return {'message': f'Processed {name}, either a format error or User ID {uid} is duplicate'}, 400
-                
+
                 #print(f"Successfully created user: {user.uid}")
                 # return response, the created user details as a JSON object
-                return jsonify(user.read())
+                return jsonify(_without_password(user.read()))
                 
             except Exception as e:
                 #print(f"Error creating user: {e}")
@@ -199,9 +207,9 @@ class UserAPI:
                 total = len(users)
              
             # prepare a json list of user dictionaries
-            json_ready = []  
+            json_ready = []
             for user in users:
-                user_data = user.read()
+                user_data = _without_password(user.read())
                 # Add access control
                 if current_user.role == 'Admin' or current_user.id == user.id:
                     user_data['access'] = ['rw'] # read-write access control 
@@ -263,9 +271,9 @@ class UserAPI:
             
             # Update the User object to the database using custom update method
             user.update(body)
-            
+
             # return response, the updated user details as a JSON object
-            return jsonify(user.read())
+            return jsonify(_without_password(user.read()))
         
         @token_required("Admin")
         def delete(self):
@@ -288,7 +296,7 @@ class UserAPI:
                 return {'message': f'User {uid} not found'}, 404
            
             # Read and then Delete the User object using custom methods
-            user_json = user.read()
+            user_json = _without_password(user.read())
             user.delete()
             
             # 204 is the status code for delete with no json response
@@ -717,12 +725,12 @@ class UserAPI:
                     # Check if user was actually created in database
                     db_user = User.query.filter_by(_uid=uid).first()
                     if db_user:
-                        return jsonify(db_user.read())
+                        return jsonify(_without_password(db_user.read()))
                     else:
                         return {'message': f'Failed to create guest account for {uid}, username may already exist'}, 400
 
                 # Return the created user details
-                return jsonify(user.read())
+                return jsonify(_without_password(user.read()))
 
             except Exception as e:
                 return {'message': f'Error creating guest user: {str(e)}'}, 500
