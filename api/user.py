@@ -1,3 +1,4 @@
+import hmac
 import jwt
 from flask import Blueprint, app, request, jsonify, current_app, Response, g
 from flask_restful import Api, Resource # used for REST API building
@@ -726,6 +727,35 @@ class UserAPI:
             except Exception as e:
                 return {'message': f'Error creating guest user: {str(e)}'}, 500
 
+    class _InternalPasswordSync(Resource):
+        """
+        Server-to-server password sync, called by the Spring backend after a
+        password reset completes there, so the same account's Flask password
+        stays in sync. Not reachable via a browser session -- gated by a shared
+        secret (INTERNAL_SYNC_KEY) instead of user auth.
+        """
+        def post(self):
+            sync_key = current_app.config.get('INTERNAL_SYNC_KEY')
+            provided_key = request.headers.get('X-Internal-Sync-Key')
+            if not sync_key or not provided_key or not hmac.compare_digest(provided_key, sync_key):
+                return {'message': 'Unauthorized'}, 401
+
+            body = request.get_json(silent=True) or {}
+            uid = body.get('uid')
+            password = body.get('password')
+
+            if not uid or not password:
+                return {'message': 'uid and password are required'}, 400
+            if len(password) < 8:
+                return {'message': 'Password must be at least 8 characters'}, 400
+
+            user = User.query.filter_by(_uid=uid).first()
+            if user is None:
+                return {'message': f'User {uid} not found'}, 404
+
+            user.update({'password': password})
+            return {'message': f'Password synced for {uid}'}, 200
+
     # building RESTapi endpoint
     api.add_resource(_ID, '/id')
     api.add_resource(_BULK, '/users')
@@ -736,6 +766,7 @@ class UserAPI:
     api.add_resource(_GradeData, '/grade_data')
     api.add_resource(_APExam, '/apexam')
     api.add_resource(_School, '/school')
+    api.add_resource(_InternalPasswordSync, '/internal/sync-password')
     
     class _Class(Resource):
         """Manage the user's `class` list (e.g. CSSE, CSP, CSA).

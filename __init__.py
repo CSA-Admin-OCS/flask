@@ -68,6 +68,9 @@ app.config['USER_PFP'] = os.environ.get('USER_PFP') or 'default.png'
 # Defaults
 app.config['DEFAULT_PASSWORD'] = os.environ.get('DEFAULT_PASSWORD') or 'password'
 app.config['DEFAULT_PFP'] = os.environ.get('DEFAULT_PFP') or 'default.png'
+# Shared secret for server-to-server calls from Spring (e.g. password sync after
+# an OAuth-verified reset). No default -- unset means the sync endpoint is closed.
+app.config['INTERNAL_SYNC_KEY'] = os.environ.get('INTERNAL_SYNC_KEY')
 # Convenience user
 app.config['MY_NAME'] = os.environ.get('MY_NAME') or 'convenience'
 app.config['MY_UID'] = os.environ.get('MY_UID') or 'convenience'
