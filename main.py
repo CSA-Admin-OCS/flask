@@ -110,7 +110,17 @@ def unauthorized_callback():
 # register URIs for server pages
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    # user_id is the composite "id:token_version" from User.get_id(). A mismatched
+    # token_version means the session predates a password change on this account --
+    # returning None here tells Flask-Login the session is invalid.
+    try:
+        raw_id, token_version = user_id.split(":", 1)
+    except ValueError:
+        return None
+    user = User.query.get(int(raw_id))
+    if user is None or str(user.token_version) != token_version:
+        return None
+    return user
 
 @app.context_processor
 def inject_user():
