@@ -372,25 +372,40 @@ def extract_text_from_url(url):
 
 def summarize_submission_batch(items):
     """
-    Summarize up to MAX_SUMMARY_BATCH_ITEMS submissions with a single Gemini call.
+    Summarize up to MAX_SUMMARY_BATCH_ITEMS submissions with a single Gemini call,
+    also scoring each one's feedback quality from 1-5 in the same call.
 
     `items` is a list of dicts: {id, assignment_name, submitter_name, text}.
-    Returns {'success': True, 'summaries': [{'id':.., 'summary':..}, ...]}
+    Returns {'success': True, 'summaries': [{'id':.., 'summary':.., 'quality_score':..}, ...]}
     or an (error_dict, status_code) tuple on failure.
     """
     system_prompt = """
 You are an AI assistant helping a teacher grade student assignment submissions.
-For each submission listed below, write a concise 2-3 sentence summary of what the
-student submitted, in plain language a grader can skim before opening the full
-submission.
+
+For each submission listed below, do two things:
+1. Write a concise 2-3 sentence summary of what the student submitted, in plain
+   language a grader can skim before opening the full submission.
+2. Assign a Quality Score from 1-5 rating how thorough and useful the student's
+   feedback/submission is, using this rubric:
+   5 (Exemplar): Outstanding, highly structured feedback covering nearly all
+     relevant categories or aspects, with specific details, reproduction steps,
+     or actionable proposals.
+   4 (High Quality): Strong submission detailing multiple specific points, clear
+     observations, and actionable insights across several categories.
+   3 (Moderate Quality): Clear submission identifying 2-3 standard issues or
+     points with sufficient context.
+   2 (Basic Quality): Brief submission addressing 1-2 surface-level issues with
+     minimal detail.
+   1 (Minimal Quality): Very minimal comments, placeholder notes, or a duplicate
+     submission with no distinct additional input.
 
 Respond with ONLY a JSON array, no other text and no markdown code fences, in this
 exact format:
-[{"id": "<submission id>", "summary": "<summary text>"}, ...]
+[{"id": "<submission id>", "summary": "<summary text>", "quality_score": <integer 1-5>}, ...]
 
 Include exactly one entry per submission listed below, using the exact id given.
 If a submission's content is empty or unreadable, use "No readable content to
-summarize." as its summary.
+summarize." as its summary and a quality_score of 1.
 """
 
     sections = []
@@ -427,6 +442,18 @@ summarize." as its summary.
             'message': 'Could not parse Gemini response as JSON',
             'raw_response': raw_text
         }, 500
+
+    # Clamp/validate quality_score to an int 1-5; anything unparseable becomes
+    # None rather than failing the whole batch over one malformed field.
+    if isinstance(parsed, list):
+        for entry in parsed:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                score = int(entry.get('quality_score'))
+                entry['quality_score'] = score if 1 <= score <= 5 else None
+            except (TypeError, ValueError):
+                entry['quality_score'] = None
 
     return {'success': True, 'summaries': parsed}
 
