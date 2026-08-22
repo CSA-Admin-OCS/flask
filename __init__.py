@@ -137,7 +137,7 @@ app.config['GITHUB_TARGET_NAME'] = os.environ.get('GITHUB_TARGET_NAME') or 'open
 
 
 # Gemini API settingsa
-app.config['GEMINI_SERVER'] = os.environ.get('GEMINI_SERVER') or 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
+app.config['GEMINI_SERVER'] = os.environ.get('GEMINI_SERVER') or 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent'
 app.config['GEMINI_API_KEY'] = os.environ.get('GEMINI_API_KEY') or None
 
 
