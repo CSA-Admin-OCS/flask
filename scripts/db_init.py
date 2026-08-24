@@ -57,7 +57,7 @@ def backup_mysql_database():
         f"--host={app.config['DB_ENDPOINT']}",
         '--port=3306',
         f"--user={app.config['DB_USERNAME']}",
-        '--single-transaction', '--routines', '--triggers',
+        '--single-transaction', '--set-gtid-purged=OFF', '--no-tablespaces','--routines', '--triggers',
         db_name,
     ]
     env = dict(os.environ, MYSQL_PWD=app.config['DB_PASSWORD'])
