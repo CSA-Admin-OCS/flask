@@ -22,11 +22,14 @@ def default_year():
         current_year = current_year + 1
     return current_year 
 
-# Password complexity checks - minlength 8, requires upper, lower, digit, number, symbol  
+# Password complexity checks - minlength 8, requires upper, lower, digit, number, symbol
+# Special-character set kept identical to spring's Person.checkPassword and pages'
+# getPasswordStrength (support.md) so a password accepted by one backend in the
+# reset pipeline is never rejected by another.
 def validate_password(password):
     if password is None or password == "":
         return False
-    
+
     if len(password) < 8:
         return False
 
@@ -39,7 +42,7 @@ def validate_password(password):
     if not any(char.isdigit() for char in password):
         return False
 
-    if not any(not char.isalnum() for char in password):
+    if not any(char in "`~!@#$%^&*()" for char in password):
         return False
 
     return True
@@ -298,15 +301,19 @@ class User(db.Model, UserMixin):
 
     # set password, this is conventional setter with business logic
     def set_password(self, password):
-        # Check whether or not password meets the compelxity requiements defined above
-        if not validate_password(password):
-            current_app.aborter(400, description="Password fails to meet complexity requirements")
         """Set password: hash if not already hashed, else set directly."""
         if password and password.startswith("pbkdf2:sha256:"):
-            # Already hashed, set directly
+            # Already hashed, set directly. No complexity check here -- this path
+            # is a verbatim restore/sync of a hash already produced elsewhere, not
+            # a new password, and hashing bytes won't reliably satisfy these rules.
             new_hash = password
         else:
-            # Not hashed, hash it
+            # Not hashed -- this is a genuinely new plaintext password.
+            if not validate_password(password):
+                raise ValueError(
+                    "Password does not meet complexity requirements (8+ characters, "
+                    "upper, lower, number, and a special character)"
+                )
             new_hash = generate_password_hash(password, "pbkdf2:sha256", salt_length=10)
 
         # Only bump on an actual change, so idempotent operations (e.g. re-importing the
