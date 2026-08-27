@@ -20,7 +20,29 @@ def default_year():
     # If current month is between August (8) and December (12), the enrollment year is next year.
     if 7 <= current_month <= 12:
         current_year = current_year + 1
-    return current_year 
+    return current_year
+
+# Complexity rule shared across the whole password-reset pipeline (this function,
+# spring's Person.checkPassword, and pages' getPasswordStrength in support.md) --
+# keep the required special-character set identical across all three so a
+# password accepted by one backend is never rejected by the other.
+def validate_password(password):
+    if password is None or len(password) < 8:
+        return False
+
+    if not any(char.isupper() for char in password):
+        return False
+
+    if not any(char.islower() for char in password):
+        return False
+
+    if not any(char.isdigit() for char in password):
+        return False
+
+    if not any(char in "`~!@#$%^&*()" for char in password):
+        return False
+
+    return True
 
 """ Database Models """
 
@@ -278,10 +300,17 @@ class User(db.Model, UserMixin):
     def set_password(self, password):
         """Set password: hash if not already hashed, else set directly."""
         if password and password.startswith("pbkdf2:sha256:"):
-            # Already hashed, set directly
+            # Already hashed, set directly. No complexity check here -- this path
+            # is a verbatim restore/sync of a hash already produced elsewhere, not
+            # a new password, and hashing bytes won't reliably satisfy these rules.
             new_hash = password
         else:
-            # Not hashed, hash it
+            # Not hashed -- this is a genuinely new plaintext password.
+            if not validate_password(password):
+                raise ValueError(
+                    "Password does not meet complexity requirements (8+ characters, "
+                    "upper, lower, number, and a special character)"
+                )
             new_hash = generate_password_hash(password, "pbkdf2:sha256", salt_length=10)
 
         # Only bump on an actual change, so idempotent operations (e.g. re-importing the

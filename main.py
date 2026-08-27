@@ -219,8 +219,12 @@ def reset_password(user_id):
         return jsonify({'error': 'User not found'}), 404
 
     # Set the new password
-    if user.update({"password": app.config['DEFAULT_PASSWORD']}):
-        return jsonify({'message': 'Password reset successfully'}), 200
+    try:
+        if user.update({"password": app.config['DEFAULT_PASSWORD']}):
+            return jsonify({'message': 'Password reset successfully'}), 200
+    except ValueError as e:
+        # DEFAULT_PASSWORD is misconfigured (doesn't meet complexity requirements)
+        return jsonify({'error': str(e)}), 500
     return jsonify({'error': 'Password reset failed'}), 500
 
 @app.route('/kasm_users')

@@ -5,7 +5,7 @@ from flask_restful import Api, Resource # used for REST API building
 from datetime import datetime, timedelta
 from __init__ import app, db
 from api.authorize import token_required
-from model.user import User
+from model.user import User, validate_password
 from model.github import GitHubUser
 import os
 
@@ -114,8 +114,8 @@ class UserAPI:
             #1: Setup minimal User object using __init__ method
             password = body.get('password')
             if password is not None:
-                if len(password) < 8 and not password.startswith("pbkdf2:sha256:"):
-                    return {'message': 'Password must be at least 8 characters'}, 400
+                if not password.startswith("pbkdf2:sha256:") and not validate_password(password):
+                    return {'message': 'Password does not meet complexity requirements (8+ characters, upper, lower, number, and a special character)'}, 400
                 user_obj = User(name=name, uid=uid, password=password)
             else:
                 user_obj = User(name=name, uid=uid)
@@ -762,14 +762,17 @@ class UserAPI:
 
             if not uid or not password:
                 return {'message': 'uid and password are required'}, 400
-            if len(password) < 8:
-                return {'message': 'Password must be at least 8 characters'}, 400
+            if not validate_password(password):
+                return {'message': 'Password does not meet complexity requirements (8+ characters, upper, lower, number, and a special character)'}, 400
 
             user = User.query.filter_by(_uid=uid).first()
             if user is None:
                 return {'message': f'User {uid} not found'}, 404
 
-            user.update({'password': password})
+            try:
+                user.update({'password': password})
+            except ValueError as e:
+                return {'message': str(e)}, 400
             return {'message': f'Password synced for {uid}'}, 200
 
     # building RESTapi endpoint

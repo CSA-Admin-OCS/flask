@@ -53,20 +53,20 @@ cors = CORS(
 # Admin Defaults
 app.config['ADMIN_USER'] = os.environ.get('ADMIN_USER') or 'Admin Name'
 app.config['ADMIN_UID'] = os.environ.get('ADMIN_UID') or 'admin'
-app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'password'
+app.config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'DefaultPassword123!'
 app.config['ADMIN_PFP'] = os.environ.get('ADMIN_PFP') or 'default.png'
 # Teacher Defaults
 app.config['TEACHER_USER'] = os.environ.get('TEACHER_USER') or 'Teacher Name'
 app.config['TEACHER_UID'] = os.environ.get('TEACHER_UID') or 'teacher'
-app.config['TEACHER_PASSWORD'] = os.environ.get('TEACHER_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'password'
+app.config['TEACHER_PASSWORD'] = os.environ.get('TEACHER_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'DefaultPassword123!'
 app.config['TEACHER_PFP'] = os.environ.get('TEACHER_PFP') or 'default.png'
 # Default User Defaults
 app.config['USER_NAME'] = os.environ.get('USER_NAME') or 'User Name'
 app.config['USER_UID'] = os.environ.get('USER_UID') or 'user'
-app.config['USER_PASSWORD'] = os.environ.get('USER_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'password'
+app.config['USER_PASSWORD'] = os.environ.get('USER_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'DefaultPassword123!'
 app.config['USER_PFP'] = os.environ.get('USER_PFP') or 'default.png'
 # Defaults
-app.config['DEFAULT_PASSWORD'] = os.environ.get('DEFAULT_PASSWORD') or 'password'
+app.config['DEFAULT_PASSWORD'] = os.environ.get('DEFAULT_PASSWORD') or 'DefaultPassword123!'
 app.config['DEFAULT_PFP'] = os.environ.get('DEFAULT_PFP') or 'default.png'
 # Shared secret for server-to-server calls from Spring (e.g. password sync after
 # an OAuth-verified reset). No default -- unset means the sync endpoint is closed.
@@ -74,7 +74,7 @@ app.config['INTERNAL_SYNC_KEY'] = os.environ.get('INTERNAL_SYNC_KEY')
 # Convenience user
 app.config['MY_NAME'] = os.environ.get('MY_NAME') or 'convenience'
 app.config['MY_UID'] = os.environ.get('MY_UID') or 'convenience'
-app.config['MY_PASSWORD'] = os.environ.get('MY_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'password'
+app.config['MY_PASSWORD'] = os.environ.get('MY_PASSWORD') or os.environ.get('DEFAULT_PASSWORD') or 'DefaultPassword123!'
 app.config['MY_PFP'] = os.environ.get('MY_PFP') or 'default.png'
 app.config['MY_ROLE'] = os.environ.get('MY_ROLE') or 'User'
 
