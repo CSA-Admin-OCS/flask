@@ -22,6 +22,28 @@ def default_year():
         current_year = current_year + 1
     return current_year 
 
+# Password complexity checks - minlength 8, requires upper, lower, digit, number, symbol  
+def validate_password(password):
+    if password is None or password == "":
+        return False
+    
+    if len(password) < 8:
+        return False
+
+    if not any(char.isupper() for char in password):
+        return False
+
+    if not any(char.islower() for char in password):
+        return False
+
+    if not any(char.isdigit() for char in password):
+        return False
+
+    if not any(not char.isalnum() for char in password):
+        return False
+
+    return True
+
 """ Database Models """
 
 ''' Tutorial: https://www.sqlalchemy.org/library.html#tutorials, try to get into Python shell and follow along '''
@@ -276,6 +298,9 @@ class User(db.Model, UserMixin):
 
     # set password, this is conventional setter with business logic
     def set_password(self, password):
+        # Check whether or not password meets the compelxity requiements defined above
+        if not validate_password(password):
+            current_app.aborter(400, description="Password fails to meet complexity requirements")
         """Set password: hash if not already hashed, else set directly."""
         if password and password.startswith("pbkdf2:sha256:"):
             # Already hashed, set directly
