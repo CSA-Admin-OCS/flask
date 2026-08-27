@@ -7,6 +7,7 @@ from __init__ import app, db
 from api.authorize import token_required
 from model.user import User
 from model.github import GitHubUser
+from api.github_id_validation import is_student_id_used_as_github_id
 import os
 
 user_api = Blueprint('user_api', __name__,
@@ -104,6 +105,9 @@ class UserAPI:
             uid = body.get('uid')
             if uid is None or len(uid) < 2:
                 return {'message': f'User ID is missing, or is less than 2 characters'}, 400
+
+            if is_student_id_used_as_github_id(uid):
+                return {'message': 'Enter your GitHub ID, not your 7-digit student ID'}, 400
           
             # check if uid is a GitHub account
             _, status = GitHubUser().get(uid)
