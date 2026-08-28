@@ -34,6 +34,41 @@ def run_python():
 
     return {"output": output}
 
+@runner.post("/javascript")
+def run_js():
+    data = request.get_json()
+    code = data.get("code", "")
+
+    if not code.strip():
+        return {"output": "No code provided."}, 400
+
+    # Prepend strict mode to enforce proper variable declarations
+    strict_code = '"use strict";\n' + code
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".js") as tmp:
+        tmp.write(strict_code.encode())
+        tmp.flush()
+
+        try:
+            result = subprocess.run(
+                ["node", tmp.name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd="/tmp",  # Force working directory to /tmp
+                env={"HOME": "/tmp", "PATH": "/opt/homebrew/bin:/usr/bin:/usr/local/bin"}  # Restricted environment (includes macOS Homebrew path)
+            )
+            output = result.stdout + result.stderr
+        except subprocess.TimeoutExpired:
+            output = "Execution timed out (5 s limit)."
+        except Exception as e:
+            output = f"Error running JavaScript: {str(e)}"
+        finally:
+            os.unlink(tmp.name)
+
+    return {"output": output}
+
+
 if __name__ == "__main__":
     host = "0.0.0.0"
     port = 8591

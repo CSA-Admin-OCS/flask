@@ -3,7 +3,6 @@ from flask_restful import Api, Resource
 import subprocess, tempfile, os, requests
 
 python_exec_api = Blueprint('python_exec_api', __name__, url_prefix='/run')
-
 api = Api(python_exec_api)
 
 # todo: don't hardcode
@@ -15,7 +14,7 @@ class PythonExec(Resource):
         code = data.get("code", "")
 
         if not code.strip():
-            return {"output": "⚠️ No code provided."}, 400
+            return {"output": "No code provided."}, 400
 
         is_production = os.environ.get("IS_PRODUCTION", "false").lower() == "true"
 
