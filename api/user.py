@@ -113,12 +113,13 @@ class UserAPI:
             ''' User object creation '''
             #1: Setup minimal User object using __init__ method
             password = body.get('password')
+            signup_role = 'User' if (body.get('email') or '').lower().endswith('@stu.powayusd.com') else 'Pending'
             if password is not None:
                 if len(password) < 8 and not password.startswith("pbkdf2:sha256:"):
                     return {'message': 'Password must be at least 8 characters'}, 400
-                user_obj = User(name=name, uid=uid, password=password)
+                user_obj = User(name=name, uid=uid, password=password, role=signup_role)
             else:
-                user_obj = User(name=name, uid=uid)
+                user_obj = User(name=name, uid=uid, role=signup_role)
             
             # Handle additional fields that frontend sends
             # Create a cleaned body with only the fields User model expects
