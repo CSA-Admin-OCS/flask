@@ -314,6 +314,31 @@ class User(db.Model, UserMixin):
 
     def is_teacher(self):
         return self._role == "Teacher"
+
+    def is_mentor(self):
+        return self._role == "Mentor"
+
+    # Roles this side of the stack understands. Spring is the source of truth for
+    # authorization (it stores a list of ROLE_* rows); this single string only mirrors
+    # it so Flask-side pages and /api/id agree with what Spring says.
+    VALID_ROLES = ("User", "Admin", "Teacher", "Mentor", "Pending")
+
+    def set_role(self, role):
+        """Validate and persist a role change. Returns False on an unknown role.
+
+        Deliberately NOT wired into update(): update() is reachable by any authenticated
+        user editing themselves, so accepting a role key there would let a student make
+        themselves an Admin. Callers must do their own admin check.
+        """
+        if role not in self.VALID_ROLES:
+            return False
+        self._role = role
+        try:
+            db.session.commit()
+            return True
+        except Exception:
+            db.session.rollback()
+            return False
     
     # getter method for profile picture
     @property

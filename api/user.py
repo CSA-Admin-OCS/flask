@@ -272,6 +272,16 @@ class UserAPI:
             # Update the User object to the database using custom update method
             user.update(body)
 
+            # Role changes are handled here rather than inside update(): update() is also
+            # reached by any authenticated user editing themselves, so honouring a "role"
+            # key in there would let a student promote themselves to Admin.
+            requested_role = body.get('role')
+            if requested_role is not None and requested_role != user.role:
+                if current_user.role != 'Admin':
+                    return {'message': 'Only an Admin may change a role'}, 403
+                if not user.set_role(requested_role):
+                    return {'message': f'Invalid role: {requested_role}'}, 400
+
             # return response, the updated user details as a JSON object
             return jsonify(_without_password(user.read()))
         
