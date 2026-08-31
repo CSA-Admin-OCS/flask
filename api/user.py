@@ -770,9 +770,13 @@ class UserAPI:
                 return {'message': f'User {uid} not found'}, 404
 
             try:
-                user.update({'password': password})
+                updated = user.update({'password': password})
             except ValueError as e:
                 return {'message': str(e)}, 400
+            if updated is None:
+                # update() returns None on IntegrityError (already rolled back internally) --
+                # don't report success to Spring when the write didn't actually happen.
+                return {'message': f'Failed to sync password for {uid}'}, 500
             return {'message': f'Password synced for {uid}'}, 200
 
     # building RESTapi endpoint
