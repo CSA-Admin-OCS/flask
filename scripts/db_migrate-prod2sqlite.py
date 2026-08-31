@@ -75,7 +75,16 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
 def sqlite_path(uri):
-    """Absolute on-disk path for a sqlite:/// URI, anchored to the repo root."""
+    """Absolute on-disk path for a sqlite:/// URI, anchored to the repo root.
+
+    PERSISTENCE_PREFIX ("instance") is injected here because Flask-SQLAlchemy
+    resolves a relative sqlite:/// URI relative to app.instance_path, not the
+    repo root or CWD -- confirmed against the actual on-disk db file, which
+    really does live at instance/volumes/user_management.db even though the
+    configured URI is sqlite:///volumes/user_management.db. A version of this
+    function that stripped sqlite:/// without re-adding "instance/" would
+    point at a path that doesn't exist.
+    """
     return os.path.join(ROOT, uri.replace('sqlite:///', f"{PERSISTENCE_PREFIX}/"))
 
 
