@@ -23,4 +23,7 @@ services:
     build: ./runner
     cap_drop:
       - ALL
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 128
     restart: unless-stopped
