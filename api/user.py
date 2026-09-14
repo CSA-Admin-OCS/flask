@@ -847,8 +847,41 @@ class UserAPI:
                 return {'message': f'Failed to reset password for {uid}'}, 500
             return {'message': f'Password reset for {uid}'}, 200
 
+    class _DeleteSelf(Resource):
+        """
+        Self-service account deletion. Requires the caller to re-enter their
+        current password (not just whatever session/JWT they're holding) and
+        type their own uid as a confirmation phrase -- both checked here, not
+        trusted from a frontend that already made the user click through a
+        confirmation page. This is the authoritative delete; the frontend
+        syncs Spring's copy afterward by calling Spring's own
+        POST /mvc/person/delete/self, matching the Flask-first pattern already
+        established for password reset.
+        """
+        @token_required()
+        def post(self):
+            current_user = g.current_user
+            body = request.get_json(silent=True) or {}
+            confirm_uid = body.get('confirmUid')
+            password = body.get('currentPassword')
+
+            # Deleting the last admin would lock everyone out of the admin portal
+            # with no way back in.
+            if current_user.is_admin() and User.query.filter_by(_role='Admin').count() < 2:
+                return {'message': 'Cannot delete the only remaining admin account'}, 403
+
+            if confirm_uid != current_user.uid:
+                return {'message': 'Confirmation phrase did not match your GitHub ID'}, 400
+
+            if not password or not current_user.is_password(password):
+                return {'message': 'Incorrect password'}, 403
+
+            current_user.delete()
+            return {'message': 'Account deleted'}, 200
+
     # building RESTapi endpoint
     api.add_resource(_ID, '/id')
+    api.add_resource(_DeleteSelf, '/user/delete-self')
     api.add_resource(_BULK, '/users')
     api.add_resource(_CRUD, '/user')
     api.add_resource(_GuestCRUD, '/user/guest')
