@@ -27,32 +27,6 @@ class JavaScriptExec(Resource):
         else:
             return _execute_local(code)
 
-        # Prepend strict mode to enforce proper variable declarations
-        strict_code = '"use strict";\n' + code
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".js") as tmp:
-            tmp.write(strict_code.encode())
-            tmp.flush()
-
-            try:
-                result = subprocess.run(
-                    ["node", tmp.name],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    cwd="/tmp",  # Force working directory to /tmp
-                    env={"HOME": "/tmp", "PATH": "/opt/homebrew/bin:/usr/bin:/usr/local/bin"}  # Restricted environment (includes macOS Homebrew path)
-                )
-                output = result.stdout + result.stderr
-            except subprocess.TimeoutExpired:
-                output = "⏱️ Execution timed out (5 s limit)."
-            except Exception as e:
-                output = f"⚠️ Error running JavaScript: {str(e)}"
-            finally:
-                os.unlink(tmp.name)
-
-        return {"output": output}
-
 def _execute_local(code):
     strict_code = '"use strict";\n' + code
     with tempfile.NamedTemporaryFile(delete=False, suffix=".js") as tmp:
