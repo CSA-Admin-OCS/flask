@@ -573,8 +573,10 @@ class User(db.Model, UserMixin):
             return None
         return self
     
-    # CRUD delete: remove self
-    # None
+    # CRUD delete: remove self. Returns self on success, None if the commit failed
+    # (e.g. a foreign-key constraint from related data) -- same convention as update()
+    # above, so callers can tell a silent rollback apart from an actual deletion instead
+    # of reporting success either way.
     def delete(self):
         try:
             KasmUser().delete(self.uid)
@@ -582,7 +584,8 @@ class User(db.Model, UserMixin):
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
-        return None   
+            return None
+        return self
     
     def save_pfp(self, image_data, filename):
         """For saving profile picture."""

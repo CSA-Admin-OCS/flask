@@ -367,8 +367,12 @@ class UserAPI:
            
             # Read and then Delete the User object using custom methods
             user_json = _without_password(user.read())
-            user.delete()
-            
+            deleted = user.delete()
+            if deleted is None:
+                # delete() returns None on IntegrityError (already rolled back
+                # internally) -- don't report success when the row is still there.
+                return {'message': f'Failed to delete user: {uid}'}, 500
+
             # 204 is the status code for delete with no json response
             return f"Deleted user: {user_json}", 204 # use 200 to test with Postman
          
@@ -855,7 +859,7 @@ class UserAPI:
         trusted from a frontend that already made the user click through a
         confirmation page. This is the authoritative delete; the frontend
         syncs Spring's copy afterward by calling Spring's own
-        POST /mvc/person/delete/self, matching the Flask-first pattern already
+        POST /api/person/delete/self, matching the Flask-first pattern already
         established for password reset.
         """
         @token_required()
@@ -876,7 +880,11 @@ class UserAPI:
             if not password or not current_user.is_password(password):
                 return {'message': 'Incorrect password'}, 403
 
-            current_user.delete()
+            deleted = current_user.delete()
+            if deleted is None:
+                # delete() returns None on IntegrityError (already rolled back
+                # internally) -- don't report success when the row is still there.
+                return {'message': f'Failed to delete account for {confirm_uid}'}, 500
             return {'message': 'Account deleted'}, 200
 
     # building RESTapi endpoint

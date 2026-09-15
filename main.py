@@ -213,7 +213,10 @@ def uploaded_file(filename):
 def delete_user(user_id):
     user = User.query.get(user_id)
     if user:
-        user.delete()
+        if user.delete() is None:
+            # delete() returns None on IntegrityError (already rolled back
+            # internally) -- don't report success when the row is still there.
+            return jsonify({'error': 'Failed to delete user'}), 500
         return jsonify({'message': 'User deleted successfully'}), 200
     return jsonify({'error': 'User not found'}), 404
 
