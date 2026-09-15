@@ -20,3 +20,9 @@ instance/data.json
 instance/data.json.*.bak
 instance/data/jokes.json
 *user_management*.db
+
+# Claude Code session artifacts
+.claude/
+CLAUDE.md
+.clauderc
+.clauderc-*
