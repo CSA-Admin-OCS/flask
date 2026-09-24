@@ -33,6 +33,8 @@ from api.post import post_api  # Import the social media post API
 from api.congrats_api import congrats_api  # Import the congrats API
 from api.profile_game import profile_game_api  # CS Pathway Game profile persistence
 from api.snapshot_proxy import snapshot_proxy
+from api.audit_log_api import audit_log_api
+from model.audit_log import AuditLog, log_event
 #from api.announcement import announcement_api ##temporary revert
 
 # database Initialization functions
@@ -94,10 +96,12 @@ app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(congrats_api)  # Register the congrats message API
 app.register_blueprint(profile_game_api)  # CS Pathway Game profile persistence
 app.register_blueprint(snapshot_proxy)  # Register the snapshot proxy API
+app.register_blueprint(audit_log_api)
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
 with app.app_context():
+    db.create_all()
     initJokes()
 
 # Tell Flask-Login the view function name of your login route
@@ -139,12 +143,14 @@ def login():
     if request.method == 'POST':
         user = User.query.filter_by(_uid=request.form['username']).first()
         if user and user.is_password(request.form['password']):
+            log_event('LOGIN_SUCCESS', uid=user._uid, req=request)
             login_user(user)
             if not is_safe_url(next_page):
                 return abort(400)
             return redirect(next_page or url_for('index'))
         else:
             error = 'Invalid username or password.'
+            log_event('LOGIN_FAIL', uid=request.form.get('username'), req=request)
     return render_template("login.html", error=error, next=next_page)
 
 @app.route('/studytracker')  # route for the study tracker page
@@ -161,6 +167,8 @@ def congrats():
     
 @app.route('/logout')
 def logout():
+    uid = getattr(current_user, '_uid', None)
+    log_event('LOGOUT', uid=uid, req=request)
     logout_user()
     return redirect(url_for('index'))
 

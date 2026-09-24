@@ -3,6 +3,7 @@ from flask_login import current_user
 from functools import wraps
 import jwt
 from model.user import User
+from model.audit_log import log_event
 
 def auth_required(roles=None):
     '''
@@ -53,6 +54,7 @@ def auth_required(roles=None):
                         token = auth_header.strip()
 
                 if not token:
+                    log_event('TOKEN_MISSING', req=request)
                     return {
                         "message": "Authentication required. No session or token found.",
                         "data": None,
@@ -65,6 +67,7 @@ def auth_required(roles=None):
                     user = User.query.filter_by(_uid=data["_uid"]).first()
 
                     if user is None:
+                        log_event('TOKEN_INVALID', uid=data.get('_uid'), req=request)
                         return {
                             "message": "Invalid Authentication token!",
                             "data": None,
@@ -75,6 +78,7 @@ def auth_required(roles=None):
                     # (treated as 0); reject if it doesn't match the account's current
                     # value -- i.e. the password has changed since this token was issued.
                     if data.get("token_version", 0) != (user.token_version or 0):
+                        log_event('TOKEN_REVOKED', uid=data.get('_uid'), req=request)
                         return {
                             "message": "Token is no longer valid -- password has changed.",
                             "data": None,
@@ -86,12 +90,14 @@ def auth_required(roles=None):
                     g.current_user = user
                 
                 except jwt.ExpiredSignatureError:
+                    log_event('TOKEN_EXPIRED', req=request)
                     return {
                         "message": "Token has expired!",
                         "data": None,
                         "error": "Unauthorized"
                     }, 401
                 except jwt.InvalidTokenError:
+                    log_event('TOKEN_INVALID', req=request)
                     return {
                         "message": "Invalid token!",
                         "data": None,
@@ -111,6 +117,8 @@ def auth_required(roles=None):
                 required_roles = roles if isinstance(roles, list) else [roles]
                 
                 if user.role not in required_roles:
+                    log_event('FORBIDDEN', uid=getattr(user, '_uid', None), req=request,
+                              details=f"required: {', '.join(required_roles)}, has: {user.role}")
                     return {
                         "message": f"Insufficient permissions. Required roles: {', '.join(required_roles)}",
                         "data": None,
