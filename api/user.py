@@ -9,6 +9,17 @@ from model.user import User
 from model.github import GitHubUser
 import os
 
+
+def _dev_cookie_samesite():
+    """Dev-mode cookie attributes. When the frontend is served from a non-local
+    origin (e.g. the prod GitHub Pages site) calling this local backend, the
+    request is cross-site and a Lax cookie is never sent back, so use
+    SameSite=None; Secure (browsers allow Secure cookies on http://localhost)."""
+    origin = request.headers.get('Origin', '')
+    if origin and not origin.startswith(('http://localhost', 'http://127.0.0.1')):
+        return {'secure': True, 'samesite': 'None'}
+    return {'secure': False, 'samesite': 'Lax'}
+
 user_api = Blueprint('user_api', __name__,
                    url_prefix='/api')
 
@@ -446,10 +457,9 @@ class UserAPI:
                                 current_app.config["JWT_TOKEN_NAME"],
                                 token,
                                 max_age=current_app.config["JWT_TOKEN_MAX_AGE"],
-                                secure=False,
                                 httponly=False,  # Set to True for more security if JS access not needed
                                 path='/',
-                                samesite='Lax'
+                                **_dev_cookie_samesite()
                             )
                         print(f"Token set: {token}")
                         return resp 
@@ -504,10 +514,9 @@ class UserAPI:
                         current_app.config["JWT_TOKEN_NAME"],
                         token,
                         max_age=0,  # Immediately expire the cookie
-                        secure=False,
                         httponly=False,  # Set to True for more security if JS access not needed
                         path='/',
-                        samesite='Lax'
+                        **_dev_cookie_samesite()
                     )
                 return resp
             except Exception as e:
