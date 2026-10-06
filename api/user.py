@@ -23,6 +23,38 @@ def _without_password(user_data):
     user_data.pop('password', None)
     return user_data
 
+def _format_duration(seconds):
+    """60 -> '1 minute', 1800 -> '30 minutes', 42 -> '42 seconds'."""
+    if seconds >= 60 and seconds % 60 == 0:
+        minutes = seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    if seconds > 60:
+        minutes, secs = divmod(seconds, 60)
+        return f"{minutes} min {secs} sec"
+    return f"{seconds} second{'s' if seconds != 1 else ''}"
+
+def _locked_response(user, just_locked=False):
+    """423 Locked with enough detail for the login page to explain the lock and count down."""
+    attempts = user.failed_login_attempts
+    prefix = "Invalid user ID or password. " if just_locked else ""
+    body = {
+        'locked': True,
+        'failed_attempts': attempts,
+        'admin_locked': user.is_admin_locked(),
+        'retry_after_seconds': None,
+        'locked_until': None,
+    }
+    if body['admin_locked']:
+        body['message'] = (f"{prefix}Your account is locked after {attempts} failed login attempts "
+                           "in a row. Contact an admin to unlock it.")
+        return body, 423
+    remaining = user.lock_seconds_remaining()
+    body['retry_after_seconds'] = remaining
+    body['locked_until'] = user.locked_until.isoformat() + "Z"
+    body['message'] = (f"{prefix}Your account is locked after {attempts} failed login attempts "
+                       f"in a row. Try again in {_format_duration(remaining)}.")
+    return body, 423, {'Retry-After': str(remaining)}
+
 class UserAPI:
     class _ID(Resource):  # Individual identification API operation
         @token_required()
@@ -393,10 +425,33 @@ class UserAPI:
                 ''' Find user '''
     
                 user = User.query.filter_by(_uid=uid).first()
-                
-                if user is None or not user.is_password(password):
-                    
-                    return {'message': f"Invalid user id or password"}, 401
+
+                if user is None:
+                    return {'message': "Invalid user ID or Password"}, 401
+
+                # A locked account is rejected before the password is even checked, so
+                # guesses made during a lock neither succeed nor extend the streak.
+                if user.is_locked():
+                    return _locked_response(user)
+
+                if not user.is_password(password):
+                    user.record_failed_login()
+                    if user.is_locked():
+                        return _locked_response(user, just_locked=True)
+                    left, next_lock = user.next_lockout()
+                    lock_text = (f"locked for {_format_duration(next_lock)}" if next_lock
+                                 else "locked until an admin unlocks it")
+                    return {
+                        'message': (f"Invalid user ID or password. Failed attempts in a row: "
+                                    f"{user.failed_login_attempts}. {left} more and your account will be "
+                                    f"{lock_text}."),
+                        'locked': False,
+                        'failed_attempts': user.failed_login_attempts,
+                        'attempts_until_lock': left,
+                        'next_lock_seconds': next_lock,
+                    }, 401
+
+                user.reset_login_lockout()
                             
                 # Check if user is found
                 if user:
@@ -772,6 +827,23 @@ class UserAPI:
             user.update({'password': password})
             return {'message': f'Password synced for {uid}'}, 200
 
+    class _Unlock(Resource):
+        """Admin-only: clear a user's failed-login streak and any lock, including the
+        15-failure lock that only an admin can lift."""
+        @token_required("Admin")
+        def post(self):
+            body = request.get_json(silent=True) or {}
+            uid = body.get('uid')
+            if not uid:
+                return {'message': 'uid is required'}, 400
+
+            user = User.query.filter_by(_uid=uid).first()
+            if user is None:
+                return {'message': f'User {uid} not found'}, 404
+
+            user.reset_login_lockout()
+            return {'message': f'Unlocked {uid}'}, 200
+
     # building RESTapi endpoint
     api.add_resource(_ID, '/id')
     api.add_resource(_BULK, '/users')
@@ -783,6 +855,7 @@ class UserAPI:
     api.add_resource(_APExam, '/apexam')
     api.add_resource(_School, '/school')
     api.add_resource(_InternalPasswordSync, '/internal/sync-password')
+    api.add_resource(_Unlock, '/user/unlock')
     
     class _Class(Resource):
         """Manage the user's `class` list (e.g. CSSE, CSP, CSA).

@@ -1,7 +1,8 @@
 """ database dependencies to support sqliteDB examples """
 from flask import current_app
 from flask_login import UserMixin
-from datetime import date
+from datetime import date, datetime, timedelta
+import math
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -163,6 +164,12 @@ class User(db.Model, UserMixin):
     # a stolen JWT or session cookie stops working the moment this account's password is
     # reset, instead of staying valid for the rest of its lifetime.
     token_version = db.Column(db.Integer, default=0, nullable=False)
+    # Login lockout state -- see record_failed_login / LOCKOUT_THRESHOLDS below.
+    # failed_login_attempts counts failures IN A ROW: any successful login resets it to 0.
+    # locked_until is a naive UTC datetime; NULL means no timed lock. Reaching
+    # ADMIN_LOCK_THRESHOLD locks the account until an admin unlocks it, regardless of locked_until.
+    failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime, nullable=True)
 
     # Define many-to-many relationship with Section model through UserSection table
     # Overlaps setting silences SQLAlchemy warnings about multiple relationship paths
@@ -295,6 +302,53 @@ class User(db.Model, UserMixin):
         """Check against hashed password."""
         result = check_password_hash(self._password, password)
         return result
+
+    # Consecutive failed logins -> lock duration in seconds. Hitting a threshold exactly
+    # starts the lock; failures in between (e.g. the 4th) are just counted.
+    LOCKOUT_THRESHOLDS = {3: 60, 5: 3 * 60, 10: 30 * 60}
+    ADMIN_LOCK_THRESHOLD = 15
+
+    def is_admin_locked(self):
+        return (self.failed_login_attempts or 0) >= self.ADMIN_LOCK_THRESHOLD
+
+    def lock_seconds_remaining(self, now=None):
+        """Seconds left on a timed lock, 0 if not time-locked."""
+        if self.locked_until is None:
+            return 0
+        remaining = (self.locked_until - (now or datetime.utcnow())).total_seconds()
+        return max(0, math.ceil(remaining))
+
+    def is_locked(self, now=None):
+        return self.is_admin_locked() or self.lock_seconds_remaining(now) > 0
+
+    def next_lockout(self):
+        """(failures left before the next lock, that lock's seconds or None for admin lock)."""
+        attempts = self.failed_login_attempts or 0
+        for threshold in sorted(self.LOCKOUT_THRESHOLDS):
+            if attempts < threshold:
+                return threshold - attempts, self.LOCKOUT_THRESHOLDS[threshold]
+        return self.ADMIN_LOCK_THRESHOLD - attempts, None
+
+    def record_failed_login(self, now=None):
+        """Count a failed login and start a lock if this failure hits a threshold."""
+        # Atomic increment so two simultaneous bad logins can't both read the same count.
+        User.query.filter_by(id=self.id).update(
+            {User.failed_login_attempts: User.failed_login_attempts + 1},
+            synchronize_session=False,
+        )
+        db.session.commit()
+        db.session.refresh(self)
+        duration = self.LOCKOUT_THRESHOLDS.get(self.failed_login_attempts)
+        if duration:
+            self.locked_until = (now or datetime.utcnow()) + timedelta(seconds=duration)
+            db.session.commit()
+
+    def reset_login_lockout(self):
+        """Clear the failure streak (successful login or admin unlock)."""
+        if self.failed_login_attempts or self.locked_until is not None:
+            self.failed_login_attempts = 0
+            self.locked_until = None
+            db.session.commit()
 
     # output content using str(object) in human readable form, uses getter
     # output content using json dumps, this is ready for API response
