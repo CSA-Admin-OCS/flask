@@ -36,7 +36,7 @@ def _format_duration(seconds):
 def _locked_response(user, just_locked=False):
     """423 Locked with enough detail for the login page to explain the lock and count down."""
     attempts = user.failed_login_attempts
-    prefix = "Incorrect password. " if just_locked else ""
+    prefix = "Invalid user ID or password. " if just_locked else ""
     body = {
         'locked': True,
         'failed_attempts': attempts,
@@ -427,7 +427,7 @@ class UserAPI:
                 user = User.query.filter_by(_uid=uid).first()
 
                 if user is None:
-                    return {'message': f"Invalid user id or password"}, 401
+                    return {'message': "Invalid user ID or password"}, 401
 
                 # A locked account is rejected before the password is even checked, so
                 # guesses made during a lock neither succeed nor extend the streak.
@@ -442,9 +442,9 @@ class UserAPI:
                     lock_text = (f"locked for {_format_duration(next_lock)}" if next_lock
                                  else "locked until an admin unlocks it")
                     return {
-                        'message': (f"Incorrect password. {user.failed_login_attempts} failed "
-                                    f"attempt{'s' if user.failed_login_attempts != 1 else ''} in a row -- "
-                                    f"{left} more and your account will be {lock_text}."),
+                        'message': (f"Invalid user ID or password. Failed attempts in a row: "
+                                    f"{user.failed_login_attempts}. {left} more and your account will be "
+                                    f"{lock_text}."),
                         'locked': False,
                         'failed_attempts': user.failed_login_attempts,
                         'attempts_until_lock': left,
