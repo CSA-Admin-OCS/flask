@@ -427,7 +427,7 @@ class UserAPI:
                 user = User.query.filter_by(_uid=uid).first()
 
                 if user is None:
-                    return {'message': "Invalid user ID or password"}, 401
+                    return {'message': "Invalid user ID or Password"}, 401
 
                 # A locked account is rejected before the password is even checked, so
                 # guesses made during a lock neither succeed nor extend the streak.
