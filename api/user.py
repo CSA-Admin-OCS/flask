@@ -34,7 +34,7 @@ def _format_duration(seconds):
     return f"{seconds} second{'s' if seconds != 1 else ''}"
 
 def _locked_response(user, just_locked=False):
-    """423 Locked with enough detail for the login page to explain the lock and count down."""
+    """401 with locked=True and enough detail for the login page to explain the lock and count down."""
     attempts = user.failed_login_attempts
     prefix = "Invalid user ID or password. " if just_locked else ""
     body = {
@@ -47,13 +47,13 @@ def _locked_response(user, just_locked=False):
     if body['admin_locked']:
         body['message'] = (f"{prefix}Your account is locked after {attempts} failed login attempts "
                            "in a row. Contact an admin to unlock it.")
-        return body, 423
+        return body, 401
     remaining = user.lock_seconds_remaining()
     body['retry_after_seconds'] = remaining
     body['locked_until'] = user.locked_until.isoformat() + "Z"
     body['message'] = (f"{prefix}Your account is locked after {attempts} failed login attempts "
                        f"in a row. Try again in {_format_duration(remaining)}.")
-    return body, 423, {'Retry-After': str(remaining)}
+    return body, 401, {'Retry-After': str(remaining)}
 
 class UserAPI:
     class _ID(Resource):  # Individual identification API operation
