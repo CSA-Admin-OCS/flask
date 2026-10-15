@@ -167,7 +167,8 @@ class User(db.Model, UserMixin):
     # Login lockout state -- see record_failed_login / LOCKOUT_THRESHOLDS below.
     # failed_login_attempts counts failures IN A ROW: any successful login resets it to 0.
     # locked_until is a naive UTC datetime; NULL means no timed lock. Reaching
-    # ADMIN_LOCK_THRESHOLD locks the account until an admin unlocks it, regardless of locked_until.
+    # RESET_LOCK_THRESHOLD locks the account until its password is reset (forgot password), or an
+    # admin unlocks it, regardless of locked_until.
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime, nullable=True)
 
@@ -295,6 +296,10 @@ class User(db.Model, UserMixin):
         # same hash during a data restore) don't needlessly invalidate live sessions/JWTs.
         if new_hash != self._password:
             self.token_version = (self.token_version or 0) + 1
+            # A new password ends any login lockout, so "Forgot your password?" is the way
+            # back in after RESET_LOCK_THRESHOLD failures.
+            self.failed_login_attempts = 0
+            self.locked_until = None
         self._password = new_hash            
 
     # check password parameter versus stored/encrypted password
@@ -306,10 +311,10 @@ class User(db.Model, UserMixin):
     # Consecutive failed logins -> lock duration in seconds. Hitting a threshold exactly
     # starts the lock; failures in between (e.g. the 4th) are just counted.
     LOCKOUT_THRESHOLDS = {3: 60, 5: 3 * 60, 10: 30 * 60}
-    ADMIN_LOCK_THRESHOLD = 15
+    RESET_LOCK_THRESHOLD = 15
 
-    def is_admin_locked(self):
-        return (self.failed_login_attempts or 0) >= self.ADMIN_LOCK_THRESHOLD
+    def needs_password_reset(self):
+        return (self.failed_login_attempts or 0) >= self.RESET_LOCK_THRESHOLD
 
     def lock_seconds_remaining(self, now=None):
         """Seconds left on a timed lock, 0 if not time-locked."""
@@ -319,15 +324,15 @@ class User(db.Model, UserMixin):
         return max(0, math.ceil(remaining))
 
     def is_locked(self, now=None):
-        return self.is_admin_locked() or self.lock_seconds_remaining(now) > 0
+        return self.needs_password_reset() or self.lock_seconds_remaining(now) > 0
 
     def next_lockout(self):
-        """(failures left before the next lock, that lock's seconds or None for admin lock)."""
+        """(failures left before the next lock, that lock's seconds or None for the reset lock)."""
         attempts = self.failed_login_attempts or 0
         for threshold in sorted(self.LOCKOUT_THRESHOLDS):
             if attempts < threshold:
                 return threshold - attempts, self.LOCKOUT_THRESHOLDS[threshold]
-        return self.ADMIN_LOCK_THRESHOLD - attempts, None
+        return self.RESET_LOCK_THRESHOLD - attempts, None
 
     def record_failed_login(self, now=None):
         """Count a failed login and start a lock if this failure hits a threshold."""
@@ -344,7 +349,8 @@ class User(db.Model, UserMixin):
             db.session.commit()
 
     def reset_login_lockout(self):
-        """Clear the failure streak (successful login or admin unlock)."""
+        """Clear the failure streak (successful login or admin unlock; a password reset clears
+        it in set_password)."""
         if self.failed_login_attempts or self.locked_until is not None:
             self.failed_login_attempts = 0
             self.locked_until = None

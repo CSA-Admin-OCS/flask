@@ -40,13 +40,13 @@ def _locked_response(user, just_locked=False):
     body = {
         'locked': True,
         'failed_attempts': attempts,
-        'admin_locked': user.is_admin_locked(),
+        'reset_required': user.needs_password_reset(),
         'retry_after_seconds': None,
         'locked_until': None,
     }
-    if body['admin_locked']:
+    if body['reset_required']:
         body['message'] = (f"{prefix}Your account is locked after {attempts} failed login attempts "
-                           "in a row. Contact an admin to unlock it.")
+                           "in a row. Reset your password with \"Forgot your password?\" to unlock it.")
         return body, 401
     remaining = user.lock_seconds_remaining()
     body['retry_after_seconds'] = remaining
@@ -440,7 +440,7 @@ class UserAPI:
                         return _locked_response(user, just_locked=True)
                     left, next_lock = user.next_lockout()
                     lock_text = (f"locked for {_format_duration(next_lock)}" if next_lock
-                                 else "locked until an admin unlocks it")
+                                 else "locked until you reset your password")
                     return {
                         'message': (f"Invalid user ID or password. Failed attempts in a row: "
                                     f"{user.failed_login_attempts}. {left} more and your account will be "
@@ -829,7 +829,7 @@ class UserAPI:
 
     class _Unlock(Resource):
         """Admin-only: clear a user's failed-login streak and any lock, including the
-        15-failure lock that only an admin can lift."""
+        15-failure lock (which a password reset also clears)."""
         @token_required("Admin")
         def post(self):
             body = request.get_json(silent=True) or {}
