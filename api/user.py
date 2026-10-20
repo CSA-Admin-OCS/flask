@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import re
 import jwt
 import threading
 from flask import Blueprint, app, request, jsonify, current_app, Response, g
@@ -85,6 +86,20 @@ def _consume_reset_token(uid, token):
 
         _consumed_reset_tokens[token] = exp
         return True
+
+
+# Mirrors Person.checkPassword() in Spring. Both backends store the same password,
+# so anything Flask saves on a reset has to pass Spring's rule too.
+SPRING_PASSWORD_RULE_MESSAGE = ('Password needs 8+ characters with an uppercase letter, a lowercase letter, '
+                                'a number, and one of ` ~ ! @ # $ % ^ & * ( )')
+
+
+def _meets_spring_password_rule(password):
+    return (len(password) >= 8
+            and re.search(r'[A-Z]', password) is not None
+            and re.search(r'[a-z]', password) is not None
+            and re.search(r'[0-9]', password) is not None
+            and re.search(r'[`~!@#$%^&*()]', password) is not None)
 
 
 def _without_password(user_data):
@@ -849,8 +864,10 @@ class UserAPI:
 
             if not uid or not reset_token or not password:
                 return {'message': 'uid, resetToken, and newPassword are required'}, 400
-            if len(password) < 8:
-                return {'message': 'Password must be at least 8 characters'}, 400
+            if not _meets_spring_password_rule(password):
+                # Spring's /reset/oauth/complete rejects these, so without this check Flask
+                # would take the new password and Spring would quietly keep the old one.
+                return {'message': SPRING_PASSWORD_RULE_MESSAGE}, 400
             if not _consume_reset_token(uid, reset_token):
                 return {'message': 'Invalid, expired, or already-used reset token'}, 403
 
