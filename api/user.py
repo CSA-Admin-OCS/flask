@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import jwt
 import threading
+import time
 from flask import Blueprint, app, request, jsonify, current_app, Response, g
 from flask_restful import Api, Resource # used for REST API building
 from datetime import datetime, timedelta
@@ -51,7 +52,9 @@ def _verify_reset_token(uid, token):
         exp = int(exp_str)
     except ValueError:
         return False, None
-    if datetime.utcnow().timestamp() > exp:
+    # time.time() is real epoch seconds. datetime.utcnow().timestamp() reads the naive
+    # UTC time as local time, so off a UTC host the check was off by the UTC offset.
+    if time.time() > exp:
         return False, None
 
     secret = current_app.config.get('RESET_TOKEN_SECRET')
@@ -74,7 +77,7 @@ def _consume_reset_token(uid, token):
     if not valid:
         return False
 
-    now = datetime.utcnow().timestamp()
+    now = time.time()
     with _consumed_reset_tokens_lock:
         for stored_token, stored_exp in list(_consumed_reset_tokens.items()):
             if stored_exp <= now:
