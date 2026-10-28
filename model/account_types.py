@@ -22,6 +22,14 @@ Each account type has:
                            (see model/guest_window.py). A type that skips the GitHub check needs it.
   window_max_minutes       how long the Guest Window can be opened for. Needed with requires_open_window.
   requests_per_minute      optional. The most requests one account of this type can make in a minute.
+  signup_label             optional. The type is offered on the sign-up form, with this text. A type
+                           without one is not offered (a staff-created type). default_account_type
+                           must have one.
+  signup_note              optional. A note the sign-up form shows when this type is chosen.
+  asks_school              optional, true by default. The sign-up form asks for a Student ID and school.
+  email_required           optional, true by default. The sign-up form requires an email.
+  spring_account           optional, true by default. The sign-up form also creates a Spring account.
+  The sign-up form also verifies with Google first when the type has google_verified_domains.
   allowed_requests         optional. When present the account can only make these requests, written
                            "METHOD /path" (for example "GET /api/id"), and is refused everything else.
 verification_interval_days is how long a verification stays current, and the most a Teacher/Admin
@@ -49,6 +57,8 @@ def _check(data):
     roles = [t["role"] for t in data["account_types"].values()]
     if len(set(roles)) != len(roles):
         raise ValueError("account_types.json: every account type needs its own role")
+    if "signup_label" not in data["account_types"][data["default_account_type"]]:
+        raise ValueError("account_types.json: default_account_type needs a signup_label, so the sign-up form offers it")
     privileged = set(data["staff_roles"]) | {data["admin_role"]}
     for name, account_type in data["account_types"].items():
         allowed = account_type.get("allowed_requests")
@@ -62,13 +72,16 @@ def _check(data):
                 raise ValueError(f"account_types.json: {name} skips the GitHub check, so its role cannot be a staff role")
             if account_type.get("requires_open_window") is not True:
                 raise ValueError(f"account_types.json: {name} skips the GitHub check, so it needs requires_open_window")
-        for flag in ("github_check", "active_on_signup", "requires_open_window"):
+        for flag in ("github_check", "active_on_signup", "requires_open_window", "asks_school", "email_required", "spring_account"):
             if flag in account_type and not isinstance(account_type[flag], bool):
                 raise ValueError(f"account_types.json: {name}.{flag} must be true or false")
         for key in ("lifetime_hours", "window_max_minutes", "requests_per_minute"):
             number = account_type.get(key)
             if key in account_type and (not isinstance(number, int) or isinstance(number, bool) or number < 1):
                 raise ValueError(f"account_types.json: {name}.{key} must be a whole number, 1 or more")
+        for key in ("signup_label", "signup_note"):
+            if key in account_type and (not isinstance(account_type[key], str) or not account_type[key].strip()):
+                raise ValueError(f"account_types.json: {name}.{key} must be text that is not blank")
         if account_type.get("requires_open_window") and "window_max_minutes" not in account_type:
             raise ValueError(f"account_types.json: {name} needs window_max_minutes")
 
@@ -210,3 +223,22 @@ def requests_per_minute(role):
     """The most requests one account of this role can make in a minute, or None for no limit."""
     account_type = _type_for_role(role)
     return account_type.get("requests_per_minute") if account_type else None
+
+
+def signup_types():
+    """The account types the sign-up form offers, in order, with what the form needs to show each
+    and to know how it behaves. Nothing about roles, lifetimes or limits."""
+    return [{
+        "id": name,
+        "label": t["signup_label"],
+        "asks_school": t.get("asks_school", True),
+        "email_required": t.get("email_required", True),
+        "spring_account": t.get("spring_account", True),
+        "google_step": bool(t.get("google_verified_domains")),
+        "requires_open_window": requires_open_window(t),
+        "note": t.get("signup_note"),
+    } for name, t in _data["account_types"].items() if "signup_label" in t]
+
+
+def default_account_type_id():
+    return _data["default_account_type"]

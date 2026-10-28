@@ -6,7 +6,7 @@ something, or what a form offers, reads these files; it does not name a role, a 
 
 | File | What it holds | Read by | Served to the pages by |
 |---|---|---|---|
-| `account_types.json` | The kinds of account, their roles, who counts as staff, how long a verification lasts, what each type may do | `model/account_types.py` | `GET /api/signup-options` (the form's part only) |
+| `account_types.json` | The kinds of account, their roles, who counts as staff, how long a verification lasts, what each type may do, and how each behaves on the sign-up form | `model/account_types.py` | `GET /api/signup-options` (the form's part only) |
 | `schools.json` | The schools a student can choose at sign-up | `model/schools.py` | `GET /api/signup-options` |
 
 Each file is added to this folder in the change that makes its values data. Data files that are not
@@ -33,7 +33,7 @@ Top level:
 | `verification_interval_days` | How long a verification stays current, and the most a Teacher/Admin can grant. |
 | `default_verification_days` | The number suggested when a Teacher/Admin is asked how long to verify for. |
 | `verification_exempt_roles` | Roles that are never re-verified. |
-| `default_account_type` | The type used when a sign-up names none, or one that is not listed. |
+| `default_account_type` | The type used when a sign-up names none, or one that is not listed. It must be offered on the sign-up form (have a `signup_label`). |
 | `account_types` | The types, by name. See below. |
 
 Each entry in `account_types` has a `role` (every type needs its own) and any of these. The comments
@@ -46,6 +46,8 @@ at the top of `model/account_types.py` are the full reference; the groups are:
   `requests_per_minute`.
 - **The Guest Window:** `requires_open_window` (the type can be created or come back only while a
   Teacher/Admin has the window open) and `window_max_minutes`.
+- **The sign-up form:** `signup_label` (offered, with this text; a type without one is not offered),
+  `signup_note`, `asks_school`, `email_required`, `spring_account`.
 
 A type that skips the GitHub check must have a list of allowed requests and the Guest Window, and its
 role cannot be a staff role. The loader refuses anything else.
@@ -59,17 +61,19 @@ form offers, not a rule about who can have an account.
 ## What the sign-up page is told
 
 `GET /api/signup-options` is public, because the form is shown to people with no account. It sends the
-schools. It sends nothing about roles, lifetimes or limits. The pages build the form from it. They keep their
-own list of schools, used only when Flask cannot be asked (an older Flask, an error), so sign-up
+schools, the offered account types with how each behaves, and the type to start on. It sends nothing about roles, lifetimes or limits. The pages build the form from it. They keep their
+own list of schools and of the student and mentor types, used only when Flask cannot be asked (an older Flask, an error), so sign-up
 never ends up with nothing to choose.
 
 ## Changing something
 
 1. **Add a school:** add an entry to `schools.json`, restart.
-2. **Rename a role** (say `Teacher` becomes `Instructor`): change it in `staff_roles`, in the type, and in
+2. **Add an account type:** add it to `account_types.json` with its own `role` and, to offer it on the
+   form, a `signup_label`. Say how it behaves with the flags above. Restart. No page change.
+3. **Rename a role** (say `Teacher` becomes `Instructor`): change it in `staff_roles`, in the type, and in
    the accounts already saved (a database update: roles are stored on each account). Code does not name
    the roles, so that is all.
-3. **Run the checks** from the repo root, each against a throwaway database:
+4. **Run the checks** from the repo root, each against a throwaway database:
    `python scripts/verify_signup_options.py` (what the form is told),
    `python scripts/verify_account_admin.py`,
    `python scripts/verify_activation.py`,
@@ -89,4 +93,3 @@ never ends up with nothing to choose.
 Still in code, and candidates to move here: the default role `"User"` in the model and the restore code,
 `User.is_teacher()`, the seeded accounts' roles, the password rule (it must stay in step with Spring's),
 the starter sections (CSP, CSSE, CSA), and the allowed origins for cross-origin requests.
-The sign-up page's own lists of account types and Google domains are not data yet.
