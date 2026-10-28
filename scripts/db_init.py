@@ -57,7 +57,10 @@ def backup_mysql_database():
         f"--host={app.config['DB_ENDPOINT']}",
         '--port=3306',
         f"--user={app.config['DB_USERNAME']}",
-        '--single-transaction', '--set-gtid-purged=OFF', '--no-tablespaces','--routines', '--triggers',
+        '--single-transaction', '--no-tablespaces', '--routines', '--triggers',
+        # RDS's admin user has no RELOAD privilege; without this, mysqldump 8 on a GTID
+        # server runs FLUSH TABLES WITH READ LOCK, is refused, and no dump is written.
+        '--set-gtid-purged=OFF',
         db_name,
     ]
     env = dict(os.environ, MYSQL_PWD=app.config['DB_PASSWORD'])
