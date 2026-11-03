@@ -21,12 +21,15 @@ class Predict(Resource):
 
         user_input = data['inputs']
 
+        if not isinstance(user_input, list):
+            return {"error": "'inputs' must be a list of 11 numbers (1-5)."}, 400
+
         if len(user_input) != 11:
             return {"error": f"Expected 11 input values, received {len(user_input)}."}, 400
 
         try:
             user_input = [int(val) for val in user_input]
-        except ValueError:
+        except (TypeError, ValueError):
             return {"error": "All input values must be numbers between 1 and 5."}, 400
 
         if not all(1 <= val <= 5 for val in user_input):
