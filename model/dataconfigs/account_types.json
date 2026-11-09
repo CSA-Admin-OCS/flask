@@ -10,6 +10,8 @@
     "student": {
       "role": "User",
       "google_verified_domains": ["stu.powayusd.com"],
+      "google_signin_domains": ["stu.powayusd.com", "powayusd.com"],
+      "google_prompt": "Please sign in with your school Google account to verify you're a Poway USD student or teacher.",
       "staff_created": false,
       "signup_label": "I am a Student"
     },
