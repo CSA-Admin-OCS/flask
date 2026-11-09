@@ -54,15 +54,14 @@ class SectionAPI:
         
         @token_required(account_types.admin_role())
         def delete(self): # Delete Method
-            body = request.get_json()
+            body = request.get_json(silent=True) or {}
             abbreviation = body.get('abbreviation')
             section = Section.query.filter_by(_abbreviation=abbreviation).first()
             if section is None:
-                return {'message': f'Section {section} not found'}, 404
-            json = section.read()
-            section.delete() 
+                return {'message': f'Section {abbreviation} not found'}, 404
+            section.delete()
             # 204 is the status code for delete with no json response
-            return f"Deleted user: {json}", 204 # use 200 to test with Postman
+            return '', 204
          
     # building RESTapi endpoint
     api.add_resource(_CRUD, '/section')
