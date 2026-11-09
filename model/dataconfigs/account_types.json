@@ -10,18 +10,26 @@
     "student": {
       "role": "User",
       "google_verified_domains": ["stu.powayusd.com"],
-      "staff_created": false
+      "staff_created": false,
+      "signup_label": "I am a Student"
     },
     "mentor": {
       "role": "Mentor",
       "google_verified_domains": [],
       "staff_created": true,
+      "signup_label": "I am a Mentor",
+      "asks_school": false,
       "verification_days": 365
     },
     "guest": {
       "role": "Guest",
       "google_verified_domains": [],
       "staff_created": false,
+      "signup_label": "I am a guest",
+      "signup_note": "A guest can view pages, post on the microblog, comment and react to posts. It needs no GitHub or school account, and it lasts only a few hours. Log in with the same account during a later guest window to come back.",
+      "asks_school": false,
+      "email_required": false,
+      "spring_account": false,
       "github_check": false,
       "active_on_signup": true,
       "lifetime_hours": 3,
