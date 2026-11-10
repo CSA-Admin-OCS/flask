@@ -72,4 +72,4 @@ if __name__ == "__main__":
     host = "0.0.0.0"
     port = int(os.environ.get("RUNNER_PORT", "8591"))
     print(f"** Server running: http://localhost:{port}")  # Pretty link
-    runner.run(debug=True, host=host, port=port, use_reloader=False)
+    runner.run(debug=False, host=host, port=port, use_reloader=False)  # debug=True would serve Werkzeug's debugger next to untrusted code
