@@ -40,8 +40,10 @@ allowed_origins = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'https://open-coding-society.github.io',
-    # Regex pattern to match any subdomain of opencodingsociety.com
-    r'https://.*\.opencodingsociety\.com',
+    # Regex pattern to match any subdomain of opencodingsociety.com. flask-cors only checks that the
+    # origin STARTS with a match, so without the $ "https://x.opencodingsociety.com.evil.example" is
+    # allowed too, and with credentials on that would let any site read a logged-in user's responses.
+    r'https://([a-z0-9-]+\.)+opencodingsociety\.com$',
     'https://opencodingsociety.com',
 ]
 
