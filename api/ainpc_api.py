@@ -22,8 +22,9 @@ ENDPOINTS:
 """
 from __init__ import app
 import requests
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, jsonify, current_app
 from flask_restful import Api, Resource
+from api.request_body import json_object
 
 # =============================================================================
 # BLUEPRINT SETUP
@@ -91,8 +92,8 @@ class AINPCAPI:
                 JSON response with NPC reply and conversation mode
             """
 
+            body = json_object()
             try:
-                body = request.get_json()
                 if not body:
                     return {'status': 'error', 'message': 'Request body is required'}, 400
                 prompt = body.get("prompt", "").strip()
@@ -164,8 +165,8 @@ class AINPCAPI:
             Returns:
                 JSON response with greeting message
             """
+            body = json_object()
             try:
-                body = request.get_json()
                 if not body:
                     return {'status': 'error', 'message': 'Request body is required'}, 400
                 session_id = body.get("session_id", "default")
@@ -201,8 +202,8 @@ class AINPCAPI:
             Returns:
                 JSON confirmation message
             """
+            body = json_object()
             try:
-                body = request.get_json()
                 if not body:
                     return {'status': 'error', 'message': 'Request body is required'}, 400
                 session_id = body.get("session_id", "default")

@@ -5,9 +5,10 @@ Provides a minimal blueprint so the application can import and register
 the `congrats_api` blueprint. This is intentionally lightweight and does
 not depend on a missing `model.congrats_message` implementation.
 """
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, jsonify, g, current_app
 from flask_restful import Api, Resource
 from api.authorize import token_required
+from api.request_body import json_object
 
 
 congrats_api = Blueprint('congrats_api', __name__, url_prefix='/api/congrats')
@@ -34,7 +35,7 @@ class CongratsCreate(Resource):
     """
     @token_required()
     def post(self):
-        body = request.get_json() or {}
+        body = json_object()
         text = body.get('text')
         if not text:
             return {'message': 'Text is required'}, 400

@@ -12,6 +12,7 @@ from flask_login import current_user
 
 from api.authorize import token_required
 from model.leaderboard import ScoreCounterEvent, ElementaryLeaderboardEvent
+from api.request_body import json_object
 
 
 # Dynamic leaderboard blueprint
@@ -42,7 +43,7 @@ class ScoreCounterAPI(Resource):
 
 	@token_required()
 	def post(self):
-		body = request.get_json() or {}
+		body = json_object()
 		payload = _normalize_payload(body)
 		if payload is None:
 			return {'message': 'payload must be an object'}, 400
@@ -69,7 +70,7 @@ class ElementaryLeaderboardAPI(Resource):
 
 	@token_required()
 	def post(self):
-		body = request.get_json() or {}
+		body = json_object()
 		payload = _normalize_payload(body)
 		if payload is None:
 			return {'message': 'payload must be an object'}, 400

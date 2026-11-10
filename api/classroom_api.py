@@ -1,9 +1,10 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, jsonify, g
 from __init__ import db
 from model.classroom import Classroom
 from model.user import User
 from api.authorize import token_required
 from model import account_types
+from api.request_body import json_object
 
 classroom_api = Blueprint('classroom_api', __name__, url_prefix='/api/classrooms')
 
@@ -37,7 +38,7 @@ def create_new_classroom():
     if current_user.role not in account_types.staff_roles():
         return {"message": "Permission denied"}, 403
 
-    data = request.get_json()
+    data = json_object()
     name = data.get('name')
     if not name:
         return {"message": "Classroom name is required"}, 400
@@ -73,7 +74,7 @@ def update_classroom(id):
     if current_user.role != account_types.admin_role() and classroom.school_name != current_user.school:
         return {"message": "Access denied"}, 403
 
-    data = request.get_json()
+    data = json_object()
     name = data.get('name')
     if name:
         classroom.name = name

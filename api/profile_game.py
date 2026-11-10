@@ -27,9 +27,10 @@ All DB mutation logic (flag_modified, db.session.commit) lives in model/user.py.
 This file is strictly a JSON pass-through layer.
 """
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, jsonify, g
 from flask_restful import Api, Resource
 from api.authorize import token_required
+from api.request_body import json_object
 
 profile_game_api = Blueprint('profile_game_api', __name__, url_prefix='/api')
 api = Api(profile_game_api)
@@ -51,7 +52,7 @@ class ProfileGameAPI:
         def post(self):
             """Create a new game profile (first-time save)."""
             user = g.current_user
-            body = request.get_json()
+            body = json_object()
             if not body:
                 return {'message': 'Request body is required'}, 400
 
@@ -71,7 +72,7 @@ class ProfileGameAPI:
         def put(self):
             """Update (deep-merge) the current user's game profile."""
             user = g.current_user
-            body = request.get_json()
+            body = json_object()
             if not body:
                 return {'message': 'Request body is required'}, 400
 

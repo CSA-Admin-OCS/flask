@@ -1,9 +1,10 @@
 import os
 import requests
-from flask import Blueprint, request, jsonify, session 
+from flask import Blueprint, jsonify, session
 from flask_restful import Api, Resource
 from model.feedback import Feedback
 from __init__ import app, db
+from api.request_body import json_object
 
 feedback_api = Blueprint('feedback_api', __name__, url_prefix='/api/feedback')
 api = Api(feedback_api)
@@ -14,7 +15,7 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 class FeedbackAPI:
     class _Create(Resource):
         def post(self):
-            data = request.get_json()
+            data = json_object()
             title = data.get('title')
             body = data.get('body')
             github_username = data.get('uid', 'Anonymous')

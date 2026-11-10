@@ -40,10 +40,11 @@ USAGE EXAMPLE (JavaScript frontend):
 """
 
 from __init__ import app
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, jsonify, current_app
 from flask_restful import Api, Resource
 import requests
 import os
+from api.request_body import json_object
 
 # Blueprint setup - keeps original name for backwards compatibility
 groq_api = Blueprint('groq_api', __name__, url_prefix='/api')
@@ -105,7 +106,7 @@ class GroqAPI:
         Kept for backwards compatibility.
         """
         def post(self):
-            body = request.get_json()
+            body = json_object()
             messages = body.get('messages')
 
             if not messages:
@@ -142,6 +143,7 @@ class GroqAPI:
         More options and better response format.
         """
         def post(self):
+            data = json_object()
             try:
                 api_key = get_groq_api_key()
                 if not api_key:
@@ -150,7 +152,6 @@ class GroqAPI:
                         'error': 'GROQ_API_KEY not configured. Add it to .env file.'
                     }, 500
 
-                data = request.get_json() or {}
                 messages = data.get('messages', [])
 
                 if not messages:
@@ -210,12 +211,12 @@ class GroqAPI:
         Supports: summarize, sentiment, keywords, custom
         """
         def post(self):
+            data = json_object()
             try:
                 api_key = get_groq_api_key()
                 if not api_key:
                     return {'success': False, 'error': 'GROQ_API_KEY not configured'}, 500
 
-                data = request.get_json() or {}
                 text = data.get('text', '')
                 task = data.get('task', 'summarize')
 

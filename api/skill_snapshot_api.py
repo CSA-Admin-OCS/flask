@@ -1,9 +1,10 @@
-from flask import Blueprint, g, request, jsonify
+from flask import Blueprint, g, jsonify
 from flask_restful import Api, Resource
 from api.authorize import auth_required, token_required
 from model import account_types
 from model.skill_snapshot import SkillSnapshot
 from __init__ import db
+from api.request_body import json_object
 
 skill_passport_api = Blueprint('skill_passport_api', __name__, url_prefix='/api')
 api = Api(skill_passport_api)
@@ -51,7 +52,7 @@ class SkillPassportAPI:
             if not current_user:
                 return {'message': 'User not found'}, 404
 
-            body = request.get_json()
+            body = json_object()
             project_name = body.get('project_name')
             if not project_name:
                 return {'message': 'project_name is required'}, 400

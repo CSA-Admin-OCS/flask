@@ -1,10 +1,11 @@
-from flask import Blueprint, request, jsonify, current_app, Response, g
+from flask import Blueprint, jsonify, current_app, Response, g
 from flask_restful import Api, Resource # used for REST API building
 from datetime import datetime
 import jwt
 from api.authorize import token_required
 from model import account_types
 from model.user import Section
+from api.request_body import json_object
 
 section_api = Blueprint('section_api', __name__,
                    url_prefix='/api')
@@ -18,7 +19,7 @@ class SectionAPI:
         @token_required(account_types.admin_role())
         def post(self): # Create method
             ''' Read data for json body '''
-            body = request.get_json()
+            body = json_object()
             
             ''' Avoid garbage in, error checking '''
             # validate section name
@@ -54,7 +55,7 @@ class SectionAPI:
         
         @token_required(account_types.admin_role())
         def delete(self): # Delete Method
-            body = request.get_json(silent=True) or {}
+            body = json_object()
             abbreviation = body.get('abbreviation')
             section = Section.query.filter_by(_abbreviation=abbreviation).first()
             if section is None:
