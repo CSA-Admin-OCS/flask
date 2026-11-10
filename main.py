@@ -266,6 +266,8 @@ def reset_password(user_id):
 @app.route('/update_user/<string:uid>', methods=['PUT'])
 def update_user(uid):
     # Authorization check
+    if not current_user.is_authenticated:
+        return jsonify({'error': 'Authentication required'}), 401
     if not current_user.is_admin():
         return jsonify({'error': 'Unauthorized'}), 403
 
