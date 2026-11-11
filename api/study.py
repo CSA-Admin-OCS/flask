@@ -5,6 +5,7 @@ from model.study import Study
 from __init__ import db
 import json
 from datetime import datetime
+from api.request_body import json_object
 
 # Create a Blueprint for the study API
 study_api = Blueprint('study_api', __name__, url_prefix='/api/study')
@@ -12,9 +13,9 @@ study_api = Blueprint('study_api', __name__, url_prefix='/api/study')
 # Route to add a new study record or update an existing one
 @study_api.route('', methods=['POST'])
 def add_study_record():
+    data = json_object()
     try:
         # Get data from the request
-        data = request.get_json()
         
         # Validate required fields
         required_fields = ['topic', 'subtopic', 'studied', 'timestamp']

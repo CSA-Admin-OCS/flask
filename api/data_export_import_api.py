@@ -24,6 +24,7 @@ from model.presence import CameraCheck, PresenceEvent, PresencePeriod, PresenceR
 from model.presence_schedule import PresenceSchedule, PresenceScheduleBlock, PresenceScheduleOverride
 from model.rfid_tag import RfidTag
 from model.presence_backup import export_presence, import_presence
+from api.request_body import json_object
 
 data_export_import_api = Blueprint('data_export_import_api', __name__, url_prefix='/api/export')
 api = Api(data_export_import_api)
@@ -311,7 +312,7 @@ class ImportAllData(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required to import data'}, 403
 
-        data = request.get_json()
+        data = json_object()
         if not data:
             return {'message': 'No data provided'}, 400
 
@@ -1155,7 +1156,7 @@ class ImportSections(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         sections_data = data.get('sections', [])
         
         try:
@@ -1175,7 +1176,7 @@ class ImportUsers(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         users_data = data.get('users', [])
         
         try:
@@ -1195,7 +1196,7 @@ class ImportTopics(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         topics_data = data.get('topics', [])
         
         try:
@@ -1215,7 +1216,7 @@ class ImportMicroblogs(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         microblogs_data = data.get('microblogs', [])
         
         try:
@@ -1235,7 +1236,7 @@ class ImportPosts(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         posts_data = data.get('posts', [])
         
         try:
@@ -1255,7 +1256,7 @@ class ImportClassrooms(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         classrooms_data = data.get('classrooms', [])
         
         try:
@@ -1275,7 +1276,7 @@ class ImportFeedback(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         feedback_data = data.get('feedback', [])
         
         try:
@@ -1295,7 +1296,7 @@ class ImportStudy(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         study_data = data.get('study', [])
         
         try:
@@ -1315,7 +1316,7 @@ class ImportPersonas(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         personas_data = data.get('personas', [])
         
         try:
@@ -1335,7 +1336,7 @@ class ImportUserPersonas(Resource):
         if current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
         
-        data = request.get_json()
+        data = json_object()
         user_personas_data = data.get('user_personas', [])
         
         try:
@@ -1354,7 +1355,7 @@ class ImportLeaderboard(Resource):
         if g.current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
 
-        data = request.get_json()
+        data = json_object()
         try:
             result = ImportAllData()._import_leaderboard(data.get('leaderboard', []))
             db.session.commit()
@@ -1371,7 +1372,7 @@ class ImportElementaryLeaderboard(Resource):
         if g.current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
 
-        data = request.get_json()
+        data = json_object()
         try:
             result = ImportAllData()._import_elementary_leaderboard(
                 data.get('elementary_leaderboard', [])
@@ -1393,7 +1394,7 @@ class ImportSkillSnapshots(Resource):
         if g.current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
 
-        data = request.get_json()
+        data = json_object()
         try:
             result = ImportAllData()._import_skill_snapshots(data.get('skill_snapshots', []))
             db.session.commit()
@@ -1419,7 +1420,7 @@ class ImportPresence(Resource):
     def post(self):
         if g.current_user.role != account_types.admin_role():
             return {'message': 'Admin privileges required'}, 403
-        data = request.get_json(silent=True) or {}
+        data = json_object()
         tables = import_presence(data.get('presence') or {})
         summary = {
             'imported': sum(t['imported'] for t in tables.values()),

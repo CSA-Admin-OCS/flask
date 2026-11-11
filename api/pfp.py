@@ -1,6 +1,7 @@
 from flask import Blueprint, g, request
 from flask_restful import Api, Resource
 from api.authorize import token_required
+from api.request_body import json_object
 from model import account_types
 from model.user import User
 from model.pfp import pfp_base64_decode, pfp_base64_upload, pfp_file_delete
@@ -112,9 +113,10 @@ class _PFP(Resource):
         current_user = g.current_user
 
         # Obtain the base64 image data from the request
-        if 'pfp' not in request.json:
+        body = json_object()
+        if 'pfp' not in body:
             return {'message': 'Base64 image data required.'}, 400
-        base64_image = request.json['pfp']
+        base64_image = body['pfp']
        
         # Make an image file from the base64 data 
         filename = pfp_base64_upload(base64_image, current_user.uid)

@@ -8,6 +8,7 @@ from api.authorize import token_required
 from model import account_types
 from model.microblog import MicroBlog, Topic
 from __init__ import db
+from api.request_body import json_object
 
 
 microblog_api = Blueprint('microblog_api', __name__, url_prefix='/api')
@@ -23,7 +24,7 @@ class MicroBlogAPI:
        def post(self):
            """Create a new micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
           
            # Validate required fields
            if not body:
@@ -113,7 +114,7 @@ class MicroBlogAPI:
        def put(self):
            """Update a micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400
@@ -147,7 +148,7 @@ class MicroBlogAPI:
        def delete(self):
            """Delete a micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400
@@ -179,7 +180,7 @@ class MicroBlogAPI:
        def post(self):
            """Add a reply to a micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400
@@ -231,7 +232,7 @@ class MicroBlogAPI:
        def post(self):
            """Add a reaction to a micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
 
 
            # --- Debug info (helps diagnose issues) ---
@@ -294,7 +295,7 @@ class MicroBlogAPI:
        def delete(self):
            """Remove a reaction from a micro blog post"""
            current_user = g.current_user
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400
@@ -342,7 +343,7 @@ class TopicAPI:
            if getattr(current_user, 'role', None) != account_types.admin_role():
                return {'message': 'Permission denied. Admin access required.'}, 403
           
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400
@@ -435,7 +436,7 @@ class TopicAPI:
            if getattr(current_user, 'role', None) != account_types.admin_role():
                return {'message': 'Permission denied. Admin access required.'}, 403
           
-           body = request.get_json()
+           body = json_object()
           
            if not body:
                return {'message': 'Request body is required'}, 400

@@ -1,12 +1,13 @@
 import random
 
-from flask import Blueprint, g, request, jsonify
+from flask import Blueprint, g, jsonify
 from flask_restful import Api, Resource
 from api.authorize import auth_required, token_required
 from model import account_types
 from model.persona import Persona, UserPersona
 from model.user import User
 from __init__ import db
+from api.request_body import json_object
 
 persona_api = Blueprint('persona_api', __name__, url_prefix='/api')
 
@@ -387,7 +388,7 @@ class PersonaAPI:
         @auth_required(roles=account_types.admin_role())
         def post(self):
             """Create a new persona"""
-            body = request.get_json()
+            body = json_object()
 
             # Validate required fields
             alias = body.get('alias')
@@ -444,7 +445,7 @@ class PersonaAPI:
         @auth_required(roles=account_types.admin_role())
         def put(self, id):
             """Update an existing persona"""
-            body = request.get_json()
+            body = json_object()
 
             # Find the persona
             persona = Persona.query.get(id)
@@ -502,7 +503,7 @@ class PersonaAPI:
     class _EvaluateGroup(Resource):
         def post(self):
             """Evaluate persona compatibility for a group"""
-            body = request.get_json()
+            body = json_object()
 
             user_uids = body.get('user_uids', [])
             if not user_uids:
@@ -574,8 +575,8 @@ class PersonaAPI:
     class _FormGroups(Resource):
         def post(self):
             """Form optimal groups based on personas, optionally incorporating prior experiences."""
+            body = json_object()
             try:
-                body = request.get_json() or {}
                 result = _orchestrate_group_formation(body)
                 return result, 200
 
@@ -601,7 +602,7 @@ class PersonaAPI:
         @token_required()
         def post(self):
             """User selects their persona (replaces existing in same category if any)"""
-            body = request.get_json()
+            body = json_object()
             persona_id = body.get('persona_id')
             weight = body.get('weight', 1)
 

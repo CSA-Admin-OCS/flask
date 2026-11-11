@@ -61,6 +61,7 @@ import json
 import re
 from api.authorize import token_required
 from model import account_types
+from api.request_body import json_object
 
 MAX_GEMINI_RETRIES = 3
 GEMINI_RETRY_STATUS_CODES = {429, 503}
@@ -484,7 +485,7 @@ class GeminiAPI:
                 JSON response from Gemini API or error message
             """
             current_user = g.current_user
-            body = request.get_json()
+            body = json_object()
 
             # Validate request body
             if not body:
@@ -663,7 +664,7 @@ class GeminiAPI:
             Returns:
                 JSON response with analysis or error message
             """
-            body = request.get_json()
+            body = json_object()
 
             if not body:
                 return {'message': 'Request body is required'}, 400
@@ -774,7 +775,7 @@ class GeminiAPI:
             Returns detailed information about the request and response.
             """
             current_user = g.current_user
-            body = request.get_json()
+            body = json_object()
 
             api_key = app.config.get('GEMINI_API_KEY')
             server = app.config.get('GEMINI_SERVER')

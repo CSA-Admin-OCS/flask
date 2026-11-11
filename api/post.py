@@ -8,6 +8,7 @@ from __init__ import db
 from model.post import Post
 from model.user import User
 from api.authorize import token_required
+from api.request_body import json_object
 
 
 # Create Blueprint
@@ -33,12 +34,10 @@ class PostAPI(Resource):
             "pageTitle": "Lesson Title"        // optional
         }
         """
+        data = json_object()
         try:
             # Get current user from JWT token
             current_user = g.current_user
-            
-            # Get request data
-            data = request.get_json()
             
             if not data:
                 return {'message': 'No data provided'}, 400
@@ -134,6 +133,7 @@ class PostDetailAPI(Resource):
             "gradeReceived": "B+ (87-89%)"  // optional
         }
         """
+        data = json_object()
         try:
             current_user = g.current_user
             
@@ -146,8 +146,6 @@ class PostDetailAPI(Resource):
             if post._user_id != current_user.id:
                 return {'message': 'You can only update your own posts'}, 403
             
-            # Get update data
-            data = request.get_json()
             if not data:
                 return {'message': 'No data provided'}, 400
             
@@ -205,11 +203,10 @@ class PostReplyAPI(Resource):
             "content": "Reply content here"
         }
         """
+        data = json_object()
         try:
             current_user = g.current_user
             
-            # Get request data
-            data = request.get_json()
             if not data:
                 return {'message': 'No data provided'}, 400
             
