@@ -2,6 +2,7 @@ from flask import Blueprint, Flask, request
 from __init__ import app
 from flask_restful import Api, Resource
 import subprocess, tempfile, os, requests
+from api.authorize import token_required
 
 python_exec_api = Blueprint('python_exec_api', __name__, url_prefix='/run')
 
@@ -12,6 +13,7 @@ runner_port = app.config['RUNNER_PORT']
 RUNNER_URL = f'http://code_runner:{runner_port}/python'
 
 class PythonExec(Resource):
+    @token_required()  # runs code on our servers: a signed-in, active account only
     def post(self):
         data = request.get_json(silent=True) or {}
         code = data.get("code", "")

@@ -40,8 +40,10 @@ allowed_origins = [
     'http://localhost:4000',
     'http://127.0.0.1:4000',
     'https://open-coding-society.github.io',
-    # Regex pattern to match any subdomain of opencodingsociety.com
-    r'https://.*\.opencodingsociety\.com',
+    # Regex pattern to match any subdomain of opencodingsociety.com. flask-cors only checks that the
+    # origin STARTS with a match, so without the $ "https://x.opencodingsociety.com.evil.example" is
+    # allowed too, and with credentials on that would let any site read a logged-in user's responses.
+    r'https://([a-z0-9-]+\.)+opencodingsociety\.com$',
     'https://opencodingsociety.com',
 ]
 
@@ -116,6 +118,14 @@ else:
    dbString = 'sqlite:///volumes/'
    dbURI = dbString + dbName + '.db'
    backupURI = dbString + dbName + '_bak.db'
+# A server that signs logins with the key written in this file lets anyone who reads the source sign one for any
+# account, so a production server (IS_PRODUCTION=true, or a MySQL database) refuses to start without its own key.
+_runs_in_production = os.environ.get('IS_PRODUCTION', 'false').lower() == 'true' or bool(DB_ENDPOINT and DB_USERNAME and DB_PASSWORD)
+if _runs_in_production and SECRET_KEY == 'SECRET_KEY':
+    raise RuntimeError("SECRET_KEY is not set (or is the placeholder from the source). Set a long random "
+                       "SECRET_KEY in the server's environment before starting in production.")
+if _runs_in_production and not os.environ.get('DEFAULT_PASSWORD'):
+    print("WARNING: DEFAULT_PASSWORD is not set, so seeded and reset accounts use the password written in the source.")
 # Set database configuration in Flask app
 app.config['DB_ENDPOINT'] = DB_ENDPOINT
 app.config['DB_USERNAME'] = DB_USERNAME

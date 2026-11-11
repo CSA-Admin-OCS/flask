@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 from flask_restful import Api, Resource
 import subprocess, tempfile, os, requests
 from __init__ import app
+from api.authorize import token_required
 
 javascript_exec_api = Blueprint('javascript_exec_api', __name__, url_prefix='/run')
 api = Api(javascript_exec_api)
@@ -11,6 +12,7 @@ runner_port = app.config['RUNNER_PORT']
 RUNNER_URL = f'http://code_runner:{runner_port}/javascript'
 
 class JavaScriptExec(Resource):
+    @token_required()  # runs code on our servers: a signed-in, active account only
     def post(self):
         data = request.get_json(silent=True) or {}
         code = data.get("code", "")
