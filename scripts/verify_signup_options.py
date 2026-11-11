@@ -71,7 +71,7 @@ def main():
         types = {t["id"]: t for t in body.get("account_types", [])}
         check("the types are listed in the order of the data, and the type to start on is the data's default",
               list(types) == ["student", "mentor", "guest"] and body.get("default_account_type") == account_types._data["default_account_type"], str(list(types)))
-        keys = {"id", "label", "asks_school", "email_required", "spring_account", "google_step", "requires_open_window", "note"}
+        keys = {"id", "label", "asks_school", "email_required", "spring_account", "google_step", "google_domains", "google_prompt", "requires_open_window", "note"}
         check("each type says only what the form needs: how to show it and how it behaves", all(set(t) == keys for t in types.values()), str([sorted(set(t) ^ keys) for t in types.values()]))
         check("it does not tell anyone the roles, lifetimes or limits behind a type",
               not any(k in t for t in types.values() for k in ("role", "lifetime_hours", "allowed_requests", "google_verified_domains", "github_check")))
@@ -80,6 +80,11 @@ def main():
         check("a mentor: no school, needs an email, gets a Spring account, no Google step", behaviour(types["mentor"]) == ("I am a Mentor", False, True, True, False, False), str(types["mentor"]))
         check("a guest: no school, email optional, no Spring account, no Google step, only while the Guest Window is open",
               behaviour(types["guest"]) == ("I am a guest", False, False, False, False, True), str(types["guest"]))
+        check("a student's Google step names the domains the form accepts, which are the school's two, and says why", types["student"]["google_domains"] == ["stu.powayusd.com", "powayusd.com"]
+              and isinstance(types["student"]["google_prompt"], str) and "Google account" in types["student"]["google_prompt"], str(types["student"]))
+        check("a type with no Google step has no domains and no prompt", all(types[k]["google_domains"] == [] and types[k]["google_prompt"] is None for k in ("mentor", "guest")))
+        check("the domains the form accepts include every domain that activates a student at once",
+              set(account_types.google_domains("User")) <= set(types["student"]["google_domains"]), str(account_types.google_domains("User")))
         check("only a guest has a note to show, and it is text", types["student"]["note"] is None and types["mentor"]["note"] is None
               and isinstance(types["guest"]["note"], str) and types["guest"]["note"].strip() != "", str(types["guest"]["note"]))
 
@@ -90,6 +95,12 @@ def main():
             seen = {t["id"]: t for t in c.get("/api/signup-options").get_json()["account_types"]}
             check("a type added to the data is offered, with its own behaviour, and a Google step because it has a Google domain",
                   "observer" in seen and behaviour(seen["observer"]) == ("I am an observer", False, False, False, True, False) and seen["observer"]["note"] == "Watch only.", str(seen.get("observer")))
+            check("with no separate list, the domains the form accepts are the ones that activate", seen["observer"]["google_domains"] == ["school.example"] and seen["observer"]["google_prompt"] is None, str(seen["observer"]))
+        extra["account_types"]["observer"].update(google_signin_domains=["school.example", "staff.example"], google_prompt="Sign in with your school account.")
+        with patch.object(account_types, "_data", extra):
+            seen = {t["id"]: t for t in c.get("/api/signup-options").get_json()["account_types"]}
+            check("a separate list of accepted domains and a prompt follow the data", seen["observer"]["google_domains"] == ["school.example", "staff.example"]
+                  and seen["observer"]["google_prompt"] == "Sign in with your school account.", str(seen["observer"]))
         hidden = copy.deepcopy(account_types._data)
         del hidden["account_types"]["mentor"]["signup_label"]
         with patch.object(account_types, "_data", hidden):
@@ -129,6 +140,14 @@ def main():
           all(type_refused(lambda d, k=k: guest(d).update({k: "no"})) for k in ("asks_school", "email_required", "spring_account")))
     check("startup refuses a signup_label or signup_note that is blank or not text",
           all(type_refused(lambda d, k=k, v=v: guest(d).update({k: v})) for k in ("signup_label", "signup_note") for v in ("", "  ", 7, True)))
+    student = lambda d: d["account_types"]["student"]
+    check("startup refuses google_signin_domains that is not a list of domains (empty, not text, with an @ or blank)",
+          all(type_refused(lambda d, v=v: student(d).update(google_signin_domains=v)) for v in ([], "powayusd.com", [7], ["@powayusd.com"], [" "], ["stu.powayusd.com", ""])))
+    check("startup refuses a list of accepted domains that leaves out a domain that activates the type",
+          type_refused(lambda d: student(d).update(google_signin_domains=["powayusd.com"])))
+    check("startup refuses a google_prompt that is blank or not text", all(type_refused(lambda d, v=v: student(d).update(google_prompt=v)) for v in ("", "  ", 7)))
+    check("startup refuses accepted domains or a prompt on a type with no Google step to use them",
+          type_refused(lambda d: guest(d).update(google_signin_domains=["x.example"])) and type_refused(lambda d: guest(d).update(google_prompt="Sign in.")))
     check("startup refuses a default account type that the form does not offer", type_refused(lambda d: d["account_types"]["student"].pop("signup_label")))
 
     real_after = sha256(REAL_DB) if os.path.exists(REAL_DB) else None
