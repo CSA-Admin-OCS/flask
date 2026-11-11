@@ -162,6 +162,7 @@ class UserIssueComments(Resource):
             return {'message': str(e)}, 500
 
 class UserReceivedIssueComments(Resource):
+    @token_required()
     def get(self):
         try:
             current_user = g.current_user
