@@ -46,6 +46,7 @@ at the top of `model/account_types.py` are the full reference; the groups are:
   `requests_per_minute`.
 - **The Guest Window:** `requires_open_window` (the type can be created or come back only while a
   Teacher/Admin has the window open) and `window_max_minutes`.
+- **Spring:** `spring_role` (the role Spring is told these accounts have at login, such as `ROLE_MENTOR`: granted while the account is active, taken away when it is not; see `model/role_attestation.py`). Never an Admin or Teacher role.
 - **The sign-up form:** `signup_label` (offered, with this text; a type without one is not offered),
   `signup_note`, `asks_school`, `email_required`, `spring_account`, and for the Google step `google_signin_domains` (the email domains the form accepts, which can be more than the ones that activate at once) and `google_prompt`.
 
