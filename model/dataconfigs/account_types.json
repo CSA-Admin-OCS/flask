@@ -21,6 +21,7 @@
       "staff_created": true,
       "signup_label": "I am a Mentor",
       "asks_school": false,
+      "spring_role": "ROLE_MENTOR",
       "verification_days": 365
     },
     "guest": {

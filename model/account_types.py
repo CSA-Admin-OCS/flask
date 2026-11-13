@@ -35,6 +35,9 @@ Each account type has:
                            the others is accepted and the account waits for a Teacher/Admin). Without it, the
                            form accepts the google_verified_domains.
   google_prompt            optional, with google_verified_domains. What the form says at the Google step.
+  spring_role              optional. The role Spring is told these accounts have, at login (see model/role_attestation.py):
+                           granted while the account is active, taken away when it is not. A name like ROLE_MENTOR, and
+                           never an Admin or Teacher role.
   allowed_requests         optional. When present the account can only make these requests, written
                            "METHOD /path" (for example "GET /api/id"), and is refused everything else.
 verification_interval_days is how long a verification stays current, and the most a Teacher/Admin
@@ -80,6 +83,12 @@ def _check(data):
         for flag in ("github_check", "active_on_signup", "requires_open_window", "asks_school", "email_required", "spring_account"):
             if flag in account_type and not isinstance(account_type[flag], bool):
                 raise ValueError(f"account_types.json: {name}.{flag} must be true or false")
+        if "spring_role" in account_type:
+            spring_role = account_type["spring_role"]
+            if not (isinstance(spring_role, str) and re.fullmatch(r"ROLE_[A-Z]+(_[A-Z]+)*", spring_role)):
+                raise ValueError(f"account_types.json: {name}.spring_role must be a role name such as ROLE_MENTOR")
+            if spring_role in ("ROLE_ADMIN", "ROLE_TEACHER") or account_type["role"] in privileged:
+                raise ValueError(f"account_types.json: {name}.spring_role cannot give Spring an Admin or Teacher role")
         for key in ("lifetime_hours", "window_max_minutes", "requests_per_minute"):
             number = account_type.get(key)
             if key in account_type and (not isinstance(number, int) or isinstance(number, bool) or number < 1):
@@ -258,3 +267,9 @@ def signup_types():
 
 def default_account_type_id():
     return _data["default_account_type"]
+
+
+def spring_role(role):
+    """The role Spring is told an account of this role has, or None."""
+    account_type = _type_for_role(role)
+    return account_type.get("spring_role") if account_type else None

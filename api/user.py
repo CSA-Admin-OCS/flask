@@ -10,7 +10,7 @@ from __init__ import app, db
 from api.authorize import token_required
 from api.request_body import json_object
 from model.user import User, meets_password_rule, WeakPasswordError
-from model import account_types, guest_window
+from model import account_types, guest_window, role_attestation
 from model.google_token import verified_google_email
 from model.github import GitHubUser
 import os
@@ -540,6 +540,10 @@ class UserAPI:
                                 "limited": account_types.allowed_requests(user.role) is not None
                             }
                         }
+                        # A statement Spring can check, so it can give a verified mentor ROLE_MENTOR (model/role_attestation.py)
+                        statement = role_attestation.issue(user)
+                        if statement:
+                            response_data["role_attestation"] = statement
                         resp = jsonify(response_data)
                         
                         # Set cookie
