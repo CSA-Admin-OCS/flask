@@ -48,6 +48,10 @@ def main():
     check("every route is probed as every kind of caller", len(records) == len({(r["method"], r["rule"]) for r in records}) * len(prober.CALLERS)
           and set(prober.CALLERS) == {r["caller"] for r in records})
 
+    held = {r["caller"]: r["role"] for r in records}
+    check("each record names the role its caller's account holds, and none for a caller with no account",
+          held["anonymous"] is None and held["invalid_token"] is None and held["teacher"] == "Teacher" and held["inactive_mentor"] == "Mentor", str(held))
+
     # ---- what each caller gets
     check("an open route answers everyone", set(statuses(got, "GET", "/open").values()) == {200})
     needs = statuses(got, "GET", "/needs-login")
@@ -160,6 +164,13 @@ def main():
           and all(r["mode"] == "development" for r in project), f"{len(project)} records")
     anonymous = [r for r in project if r["caller"] == "anonymous" and r["rule"] == "/api/id"]
     check("on the project, an anonymous caller is refused by /api/id", anonymous and all(r["status"] == 401 for r in anonymous))
+    check("on the project, the roles come from the account types data", {r["caller"]: r["role"] for r in project}["mentor"] == "Mentor"
+          and {r["caller"]: r["role"] for r in project}["anonymous"] is None)
+    page = {r["caller"]: r for r in prober.probe_project(["development"], only="/congrats")}
+    check("on the project, a page behind the session login lets a signed-in caller past and sends an anonymous one to the login page",
+          page["user"]["status"] != 302 and page["admin"]["status"] != 302 and page["anonymous"]["status"] == 302
+          and "/login" in (page["anonymous"]["redirect"] or ""), str({c: r["status"] for c, r in page.items()}))
+    after = tree_state()
     check("probing the project writes nothing into the repo", before is None or before == after, "git status changed" if before != after else "")
     check("a summary names no route", "/api" not in str(prober.summary(project)))
 

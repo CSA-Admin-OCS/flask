@@ -189,11 +189,13 @@ def run_probe(app, callers, state, only=None, timeout=TIMEOUT_SECONDS, progress=
 
     callers  {name: setup(client)}, each giving a fresh test client that caller's credentials
     state    .victim_uid, .canaries (strings that must never come back to a caller), .fresh() makes a new copy of the
-             data before every call, .fingerprint() says what the data and files look like now
+             data before every call, .fingerprint() says what the data and files look like now, .roles says which
+             role each caller's account holds
     only     a substring of the route to limit the run to
     """
     import rbac_inventory as inv
     records = []
+    roles = getattr(state, "roles", None) or {}
     app.config["TESTING"] = True
     app.config["PROPAGATE_EXCEPTIONS"] = False  # an error in a route answers 500, as it does in production
     previous = signal.signal(signal.SIGALRM, _alarm)
@@ -212,7 +214,8 @@ def run_probe(app, callers, state, only=None, timeout=TIMEOUT_SECONDS, progress=
                     client = app.test_client()
                     setup(client)
                     before = state.fingerprint()
-                    record = {"method": method, "rule": rule.rule, "caller": caller, "payload_keys": sorted(body) + sorted(query)}
+                    record = {"method": method, "rule": rule.rule, "caller": caller, "role": roles.get(caller),
+                              "payload_keys": sorted(body) + sorted(query)}
                     signal.setitimer(signal.ITIMER_REAL, timeout)
                     try:
                         kwargs = {"method": method, "query_string": query}
@@ -364,7 +367,7 @@ class RealState:
                     user.activate()
                 if caller == "expired_guest":
                     user.last_verified = datetime.utcnow() - timedelta(hours=(account_types.lifetime_hours(user.role) or 1) + 5)
-                ids[caller] = user.id
+                ids[caller] = user.get_id()  # what Flask-Login keeps in the session: not always the bare id
                 tokens[caller] = jwt.encode({"_uid": user._uid, "token_version": user.token_version,
                                              "exp": datetime.utcnow() + timedelta(hours=2)},
                                             self.app.config["SECRET_KEY"], algorithm="HS256")
@@ -373,7 +376,7 @@ class RealState:
             self.db.session.remove()
         shutil.copy(self.template, self.work)
         self._point_at(self.work)
-        self.tokens, self.user_ids = tokens, ids
+        self.tokens, self.user_ids, self.roles = tokens, ids, who
         self.files = FileSnapshot(self.instance)
 
     def fresh(self):
@@ -396,7 +399,7 @@ class RealState:
             def setup(client):
                 client.set_cookie(jwt_name, self.tokens[caller])
                 with client.session_transaction() as session:
-                    session["_user_id"] = str(self.user_ids[caller])
+                    session["_user_id"] = self.user_ids[caller]
                     session["_fresh"] = True
             return setup
 

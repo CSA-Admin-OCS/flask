@@ -25,6 +25,8 @@ class FixtureState:
     """What the prober needs of the data: a fresh copy before every call, and a fingerprint of it."""
     victim_uid = VICTIM_UID
     canaries = [CANARY_NAME, CANARY_EMAIL, NETWORK_REACHED]
+    roles = {"guest": "Guest", "user": "User", "mentor": "Mentor", "teacher": "Teacher", "admin": "Admin",
+             "inactive_mentor": "Mentor", "expired_guest": "Guest"}
 
     def __init__(self, workdir):
         self.workdir = workdir
