@@ -11,16 +11,26 @@ from flask_login import current_user
 from flask_restful import Api, Resource
 
 
-def _passthrough(*args, **kwargs):
-    if len(args) == 1 and callable(args[0]) and not kwargs:
-        return args[0]
-    return lambda f: f
+def _guard_taking_roles(roles=None):
+    """Shaped like the project's auth_required: the wrapper closes over roles. It lets every call through."""
+    def decorator(func_to_guard):
+        @wraps(func_to_guard)
+        def decorated(*args, **kwargs):
+            _ = roles
+            return func_to_guard(*args, **kwargs)
+        return decorated
+    return decorator
 
 
-token_required = _passthrough
-auth_required = _passthrough
+def _passthrough(f):
+    return f
+
+
+token_required = _guard_taking_roles
+auth_required = _guard_taking_roles
 login_required = _passthrough
 require_device_api_key = _passthrough
+STAFF_ROLES = ("Teacher", "Admin")  # stands in for a list that comes from a data file
 
 
 def require_auth_if_production(f):
@@ -30,6 +40,13 @@ def require_auth_if_production(f):
         def guarded(*args, **kwargs):
             return f(*args, **kwargs)
         return guarded
+    return f
+
+
+def require_admin_if_production(f):
+    """A role list only in production mode, as the project's own does."""
+    if os.environ.get("IS_PRODUCTION", "false").lower() == "true":
+        return token_required(roles=STAFF_ROLES)(f)
     return f
 
 
@@ -63,6 +80,27 @@ def make_app(wrap_open=False):
     @app.route("/auth-roles")
     @auth_required(roles=["Teacher", "Admin"])
     def auth_roles():
+        return jsonify({})
+
+    @app.route("/roles-from-data")
+    @token_required(roles=STAFF_ROLES)
+    def roles_from_data():
+        return jsonify({})
+
+    @app.route("/one-role-as-text")
+    @token_required("Admin")
+    def one_role_as_text():
+        return jsonify({})
+
+    @app.route("/two-role-lists")
+    @token_required(["Admin", "Teacher"])
+    @auth_required(["Teacher", "Mentor"])
+    def two_role_lists():
+        return jsonify({})
+
+    @app.route("/admin-in-production")
+    @require_admin_if_production
+    def admin_in_production():
         return jsonify({})
 
     @app.route("/session-login")
@@ -140,6 +178,12 @@ def make_app(wrap_open=False):
         def post(self):
             return {}
 
+    class ClassWideRoles(Resource):
+        method_decorators = [token_required(["Admin"])]
+
+        def get(self):
+            return {}
+
     class PerMethod(Resource):
         def get(self):
             return {}
@@ -152,6 +196,7 @@ def make_app(wrap_open=False):
     api = Api(api_bp)
     api.add_resource(ClassWide, "/class-wide")
     api.add_resource(PerMethod, "/per-method")
+    api.add_resource(ClassWideRoles, "/class-wide-roles")
 
     @api_bp.before_request
     def blueprint_hook():

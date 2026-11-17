@@ -55,6 +55,11 @@ def main():
         ("GET", "/any-login"): "login",
         ("POST", "/admin-only"): "roles",
         ("GET", "/auth-roles"): "roles",
+        ("GET", "/roles-from-data"): "roles",
+        ("GET", "/one-role-as-text"): "roles",
+        ("GET", "/two-role-lists"): "roles",
+        ("GET", "/admin-in-production"): "admin_in_production_only",
+        ("GET", "/api/fixture/class-wide-roles"): "roles",
         ("GET", "/session-login"): "login",
         ("PUT", "/inline-check"): "none",
         ("DELETE", "/helper-check"): "none",
@@ -82,6 +87,21 @@ def main():
     check("roles are recorded as written", route("POST", "/admin-only")["guard"]["roles"] == "['Admin']"
           and route("GET", "/auth-roles")["guard"]["roles"] == "roles=['Teacher', 'Admin']"
           and route("DELETE", "/api/fixture/per-method")["guard"]["roles"] == "['Admin']")
+    runtime = lambda method, rule: route(method, rule)["guard"]["runtime_roles"]
+    check("the role list the running app holds is read from the guard itself", runtime("POST", "/admin-only") == ["Admin"]
+          and runtime("GET", "/auth-roles") == ["Admin", "Teacher"], str(runtime("GET", "/auth-roles")))
+    check("a role list that comes from data is read as the roles it came to, not as its text",
+          runtime("GET", "/roles-from-data") == ["Admin", "Teacher"] and "STAFF_ROLES" in route("GET", "/roles-from-data")["guard"]["roles"])
+    check("one role given as text is a list of one", runtime("GET", "/one-role-as-text") == ["Admin"])
+    check("two role lists on one route: only the roles in both pass", runtime("GET", "/two-role-lists") == ["Teacher"], str(runtime("GET", "/two-role-lists")))
+    check("a login with no role list, and a route with no guard, hold no role list",
+          runtime("GET", "/any-login") is None and runtime("GET", "/open") is None and runtime("GET", "/session-login") is None)
+    check("a role list in a class's method_decorators is read for its methods", runtime("GET", "/api/fixture/class-wide-roles") == ["Admin"]
+          and runtime("GET", "/api/fixture/class-wide") is None)
+    check("a role list on one method is not given to the class's other methods",
+          runtime("DELETE", "/api/fixture/per-method") == ["Admin"] and runtime("GET", "/api/fixture/per-method") is None)
+    check("no fixture route has a role list in the source that the running app does not show",
+          not any("role_list_not_read" in r["flags"] for r in records))
     check("a decorator on one method does not guard the class's other methods",
           route("GET", "/api/fixture/per-method")["guard"]["kind"] == "none")
     check("a custom decorator is 'unknown', named, and never 'none'",
@@ -129,8 +149,12 @@ def main():
     merged = records_by(inv.merge_modes(dev, prod))
     check("a route guarded only in production differs by mode", merged[("GET", "/production-only")]["differs_by_mode"]
           and "guarded_differently_by_mode" in merged[("GET", "/production-only")]["flags"])
+    admin_in_production = merged[("GET", "/admin-in-production")]
+    check("a role list held only in production is recorded for that mode alone", admin_in_production["differs_by_mode"]
+          and admin_in_production["modes"]["production"]["runtime_roles"] == ["Admin", "Teacher"]
+          and admin_in_production["modes"]["development"]["runtime_roles"] is None, str(admin_in_production["modes"]))
     check("other routes do not differ by mode",
-          not any(r["differs_by_mode"] for k, r in merged.items() if k != ("GET", "/production-only")))
+          not any(r["differs_by_mode"] for k, r in merged.items() if k not in (("GET", "/production-only"), ("GET", "/admin-in-production"))))
 
     summary = inv.summary(records)
     check("the summary counts by guard kind and names no route", "/open" not in json.dumps(summary) and summary["pairs"] == len(records))
