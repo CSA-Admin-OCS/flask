@@ -48,9 +48,12 @@ method, rule         the HTTP method and Flask's route template, for example POS
 endpoint, blueprint  Flask's names for the route
 file, line, function where the handler is written, relative to the repo
 decorators           every decorator on the handler and on its class, as written: [{name, args}]
-guard                what the decorators add up to: {kind, roles, unknown}
+guard                what the decorators add up to: {kind, roles, unknown, runtime_roles}
                      kind is one of: none, login, roles, device_key, login_in_production_only,
                      admin_in_production_only, unknown. roles is the argument text, or null.
+                     runtime_roles is the role list the running app holds for the handler, as names: what the
+                     argument text came to when the app started (account_types.staff_roles() becomes the
+                     roles in the data file). null when no wrapper around the handler holds a role list.
 wrapper_depth        how many wrappers the running app has around the handler
 body                 what the function does about the caller, itself and one level into the helpers it
                      calls: {reads_current_user, checks_authenticated, role_checks, refusals,
@@ -61,7 +64,8 @@ hooks                before_request hooks that run for this route
 flags                findings that need a human: reads_current_user_without_a_guard (uses the user's attributes
                      with no guard and no is_authenticated check: an anonymous caller would meet an error,
                      not a refusal), wrapped_outside_the_source, source_not_found,
-                     guarded_differently_by_mode
+                     guarded_differently_by_mode, role_list_not_read (the source gives the guard a role
+                     list and the running app shows none)
 """
 
 
@@ -278,6 +282,46 @@ def _wrapper_depth(func):
     return depth
 
 
+def _role_list(value):
+    if not value:
+        return None
+    return [value] if isinstance(value, str) else [str(v) for v in value]
+
+
+def _runtime_roles(handler, view_class=None, method=None):
+    """The roles the running app lets through to this handler, or None when nothing around it holds a role list.
+
+    A guard that takes roles keeps them in a variable called roles that its wrapper closes over, so the list is
+    read from the wrappers themselves: around the handler, and in a Flask-RESTful class's method_decorators. Two
+    role lists on one handler both have to pass, so the answer is the roles in both.
+    """
+    wrappers = []
+    func = handler
+    while func is not None:
+        wrappers.append(func)
+        func = getattr(func, "__wrapped__", None)
+    if view_class is not None:
+        declared = getattr(view_class, "method_decorators", None) or []
+        if isinstance(declared, dict):
+            declared = declared.get((method or "").lower(), [])
+        wrappers += list(declared)
+    found = []
+    for wrapper in wrappers:
+        code, cells = getattr(wrapper, "__code__", None), getattr(wrapper, "__closure__", None)
+        if code is None or not cells or "roles" not in code.co_freevars:
+            continue
+        try:
+            roles = _role_list(cells[code.co_freevars.index("roles")].cell_contents)
+        except ValueError:  # an empty cell
+            roles = None
+        if roles is not None and roles not in found:
+            found.append(roles)
+    if not found:
+        return None
+    allowed = [role for role in found[0] if all(role in other for other in found[1:])]
+    return sorted(allowed)
+
+
 def _hooks(app, endpoint):
     names = [f.__name__ for f in app.before_request_funcs.get(None, [])]
     blueprint = endpoint.split(".")[0] if "." in endpoint else None
@@ -300,10 +344,13 @@ def inventory(app):
             if view_class is not None:
                 decorators += _class_decorators(view_class)
             guard = _guard(decorators)
+            guard["runtime_roles"] = _runtime_roles(handler, view_class, method)
             body = _body_record(handler)
             flags = []
             if node is None:
                 flags.append("source_not_found")
+            if guard["kind"] == "roles" and guard["runtime_roles"] is None:
+                flags.append("role_list_not_read")
             if _wrapper_depth(handler) > expected_wrappers:
                 flags.append("wrapped_outside_the_source")  # something wraps it that no decorator in the source explains
             if body["reads_current_user"] and not body["checks_authenticated"] and guard["kind"] == "none":
@@ -349,9 +396,9 @@ def merge_modes(dev, prod):
     for k in sorted(set(by_dev) | set(by_prod)):
         record = dict(by_prod.get(k) or by_dev.get(k))
         d, p = by_dev.get(k), by_prod.get(k)
-        record["modes"] = {"development": None if d is None else {"wrapper_depth": d["wrapper_depth"]},
-                           "production": None if p is None else {"wrapper_depth": p["wrapper_depth"]}}
-        record["differs_by_mode"] = d is None or p is None or d["wrapper_depth"] != p["wrapper_depth"]
+        in_mode = lambda r: None if r is None else {"wrapper_depth": r["wrapper_depth"], "runtime_roles": r["guard"]["runtime_roles"]}
+        record["modes"] = {"development": in_mode(d), "production": in_mode(p)}
+        record["differs_by_mode"] = d is None or p is None or in_mode(d) != in_mode(p)
         if record["differs_by_mode"]:
             record["flags"] = sorted(set(record["flags"]) | {"guarded_differently_by_mode"})
         merged.append(record)
