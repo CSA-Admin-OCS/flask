@@ -170,6 +170,13 @@ def main():
     check("on the project, a page behind the session login lets a signed-in caller past and sends an anonymous one to the login page",
           page["user"]["status"] != 302 and page["admin"]["status"] != 302 and page["anonymous"]["status"] == 302
           and "/login" in (page["anonymous"]["redirect"] or ""), str({c: r["status"] for c, r in page.items()}))
+    few = prober.probe_project(["development"], only="/api/id", callers=["anonymous", "admin"])
+    check("a run can be limited to some kinds of caller", {r["caller"] for r in few} == {"anonymous", "admin"})
+    try:
+        prober.probe_project(["development"], only="/api/id", callers=["nobody"])
+        check("a kind of caller that does not exist is refused, not skipped", False)
+    except ValueError:
+        check("a kind of caller that does not exist is refused, not skipped", True)
     after = tree_state()
     check("probing the project writes nothing into the repo", before is None or before == after, "git status changed" if before != after else "")
     check("a summary names no route", "/api" not in str(prober.summary(project)))

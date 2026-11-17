@@ -149,6 +149,15 @@ def main():
     role_route = rec.reconcile([route("roles", ["token_required"], roles=["Teacher", "Admin"], rule="/d")], [], [])
     check("a role list label matches in any order", rec.check_sample(role_route, [{"request": "GET /d", "who": ["Teacher", "Admin"]}]) == [])
 
+    # ---- a first policy file from the guards
+    draft = rec.draft_policy(listed + role_route, "someone", "2027-01-31")
+    check("a draft policy lists each route under who its guard lets through in production",
+          draft["signed_in"] == ["GET /a", "GET /b"] and draft["roles"] == {"Admin": ["GET /d"], "Teacher": ["GET /d"]}, str(draft))
+    check("a route with no guard goes to legacy_open with the owner and date, never to public: only a person can say it is open on purpose",
+          draft["public"] == [] and draft["legacy_open"] == [{"owner": "someone", "review_by": "2027-01-31", "requests": ["GET /c", "GET /static/<path:filename>"]}])
+    check("a route open only in development is marked as that, and still listed for production", draft["open_in_development"] == ["GET /b"])
+    check("a draft with no open route has no empty legacy_open group", rec.draft_policy(role_route, "someone", "2027-01-31")["legacy_open"] == [])
+
     text = json.dumps(rec.summary(listed))
     check("the summary counts and names no route", "/a" not in text and "/static" not in text and rec.summary(listed)["pairs"] == 4 and rec.summary(listed)["not_probed"] == 1)
     check("roles held to a list of requests come from the account types data", rec.limited_roles_of() == ["Guest"], str(rec.limited_roles_of()))

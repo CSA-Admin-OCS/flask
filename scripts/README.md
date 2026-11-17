@@ -19,7 +19,10 @@ rbac_inventory.py   what the code says guards each route ----+
                                                              +--> rbac_reconcile.py --> where they differ
 rbac_prober.py      what each route really answers ----------+                |
                                                                               v
-model/dataconfigs/permissions.json   a policy built from that (added by the next change)
+model/dataconfigs/permissions.json   who may make each request (data)
+      |
+      v
+verify_permissions.py   fails when the file and the routes disagree
 ```
 
 Reports from `rbac_inventory.py`, `rbac_prober.py` and `rbac_reconcile.py` show which routes are open, so write them
@@ -38,3 +41,4 @@ outside the repo with `--out` and do not commit or post them. With no `--out` th
 | `rbac_reconcile.py` | Joins the inventory and the prober results and names each way the answers differ from the guard: a caller the guard should refuse who got in, a check inside the code, a route that fails only for anonymous callers, and so on. `--sample` also checks the reading against 40 hand-labelled routes. | One kind of evidence can be wrong; the two together show which routes need a person to look. | When you want that comparison, for example before changing a route's guard. It runs both tools itself unless given saved reports with `--inventory` and `--probe`. | 1 min (0 s from saved reports) |
 | `rbac_sample_labels.py` | 40 routes labelled by a person reading each handler, drawn from every kind of guard. Data, not a program. | A tool checked only against itself proves nothing; this is the person's answer. | Never on its own. Edit it only when a labelled route's guard really changes. | n/a |
 | `verify_rbac_reconcile.py` | Checks each comparison rule on small records written for it, then runs the tools on this project against the 40 labelled routes. | So the comparison can be trusted. | After changing `rbac_reconcile.py` or `rbac_inventory.py`. | 65 s |
+| `verify_permissions.py` | Checks `model/dataconfigs/permissions.json` against the app: every route has an entry and every entry has a route, the file says what the guards say, no request not listed as open answers a caller with no account (it really calls them), no `legacy_open` group is past its review date. | So the file can never drift from the code, and a new route cannot be added without deciding who may call it. | **Whenever a route is added or changed, and before merging.** Not run by CI yet. | 23 s |
