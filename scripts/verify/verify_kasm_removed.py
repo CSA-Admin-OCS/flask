@@ -5,12 +5,12 @@ Runs the real app against a throwaway SQLite database, including one that still 
 kasm_server_needed column (as production does), and checksums the real dev DB before and after to
 prove it was never touched.
 
-Usage:  python scripts/verify_kasm_removed.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_kasm_removed.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import hashlib, importlib.util, os, secrets, sys, tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-kasm-removed")

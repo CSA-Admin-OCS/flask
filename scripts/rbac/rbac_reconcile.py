@@ -11,11 +11,11 @@ decorators, and the role list the running app holds). rbac_prober.py says what e
   observed  what the app answered: refused (401, 403, or sent to the login page), answered, error, timeout
   findings  where the two differ, in the words listed at FINDINGS below
 
-  python scripts/rbac_reconcile.py                       # runs both tools on this repo; counts only
-  python scripts/rbac_reconcile.py --out report.json     # the full comparison, one record per method and route
-  python scripts/rbac_reconcile.py --inventory a.json --probe c.json    # reports made earlier
-  python scripts/rbac_reconcile.py --sample              # also check against scripts/rbac_sample_labels.py
-  python scripts/rbac_reconcile.py --draft-policy permissions.json --owner NAME --review-by 2027-01-31
+  python scripts/rbac/rbac_reconcile.py                       # runs both tools on this repo; counts only
+  python scripts/rbac/rbac_reconcile.py --out report.json     # the full comparison, one record per method and route
+  python scripts/rbac/rbac_reconcile.py --inventory a.json --probe c.json    # reports made earlier
+  python scripts/rbac/rbac_reconcile.py --sample              # also check against scripts/rbac/rbac_sample_labels.py
+  python scripts/rbac/rbac_reconcile.py --draft-policy permissions.json --owner NAME --review-by 2027-01-31
                                                          # a first model/dataconfigs/permissions.json to finish by hand
 
 The full record shows which routes are open, so write it outside the repo and do not commit or post it.
@@ -28,8 +28,8 @@ import subprocess
 import sys
 import tempfile
 
-SCRIPTS = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(SCRIPTS)
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))  # this folder, scripts/rbac: the tools import each other from here
+REPO = os.path.dirname(os.path.dirname(SCRIPTS))
 MODES = ("development", "production")
 
 # Callers with no account, and callers whose account must not be let in whatever its role

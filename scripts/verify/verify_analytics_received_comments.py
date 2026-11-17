@@ -5,13 +5,13 @@ It had no guard, so the signed-in user it reads was never set: every caller, sig
 GitHub is replaced by a stub that records the uid it is asked about. Runs against a throwaway SQLite DB and
 checksums the real dev DB before and after to prove it was never touched.
 
-Usage:  python scripts/verify_analytics_received_comments.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_analytics_received_comments.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import hashlib, os, secrets, sys, tempfile
 from unittest.mock import patch
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-analytics-received")

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Verify rbac_prober.py: that it records what each kind of caller really gets, and that running it is safe.
 
-Probes scripts/rbac_probe_fixture.py, a small app with one route for each case that matters, and checks every
+Probes scripts/rbac/rbac_probe_fixture.py, a small app with one route for each case that matters, and checks every
 record against what that route does. Also checks the safety rules (clean environment, network off, fresh data for
 every call, inert code payload, nothing written to the repo) and that the project's own app can be probed.
 
-Usage:  python scripts/verify_rbac_prober.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_rbac_prober.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import os, subprocess, sys, tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "rbac"))
 os.environ.setdefault("SECRET_KEY", "verify-rbac-prober")
 
 import rbac_prober as prober

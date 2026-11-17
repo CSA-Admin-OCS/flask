@@ -14,8 +14,8 @@ suggest. It is built so that running it can do no harm:
 
 Callers: anonymous, invalid_token, guest, user, mentor, teacher, admin, inactive_mentor, expired_guest.
 
-  python scripts/rbac_prober.py                     # development mode; counts only
-  python scripts/rbac_prober.py --both-modes --out report.json    # also IS_PRODUCTION=true, full record
+  python scripts/rbac/rbac_prober.py                     # development mode; counts only
+  python scripts/rbac/rbac_prober.py --both-modes --out report.json    # also IS_PRODUCTION=true, full record
 
 The full record shows which routes are open, so write it outside the repo and do not commit or post it.
 """
@@ -35,8 +35,8 @@ import subprocess
 import sys
 import tempfile
 
-SCRIPTS = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(SCRIPTS)
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))  # this folder, scripts/rbac: the tools import each other from here
+REPO = os.path.dirname(os.path.dirname(SCRIPTS))
 
 CALLERS = ["anonymous", "invalid_token", "guest", "user", "mentor", "teacher", "admin", "inactive_mentor", "expired_guest"]
 # The only variables the app process is given from the one this runs in. Everything else, above all every provider
@@ -474,7 +474,7 @@ def probe_project(modes, only=None, callers=None):
         for mode in modes:
             out = os.path.join(sandbox, f"probe-{mode}.json")
             env = child_env(mode)
-            command = [sys.executable, os.path.join(sandbox, "scripts", "rbac_prober.py"), "--child", mode, "--child-out", out]
+            command = [sys.executable, os.path.join(sandbox, "scripts", "rbac", "rbac_prober.py"), "--child", mode, "--child-out", out]
             if only:
                 command += ["--only", only]
             if callers:

@@ -86,7 +86,7 @@ stays in the route.
 The loader refuses a request that is in two lists, a role that `account_types.json` does not have, an entry
 that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
 
-`python scripts/verify_permissions.py` is the check to run whenever a route is added or changed. It fails when:
+`python scripts/verify/verify_permissions.py` is the check to run whenever a route is added or changed. It fails when:
 
 - a route has no entry, or an entry has no route;
 - the file and the guard on a route say different things, in development or in production;
@@ -94,7 +94,7 @@ that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
 - a `legacy_open` group is past its `review_by` date.
 
 It calls the routes on a throwaway copy of the app with no network and no provider keys
-(`scripts/rbac_prober.py`), so it is safe to run anywhere.
+(`scripts/rbac/rbac_prober.py`), so it is safe to run anywhere.
 
 ## What the sign-up page is told
 
@@ -113,14 +113,14 @@ never ends up with nothing to choose.
    the roles, so that is all.
 4. **Add or change a route:** add its request to the list that says who may make it in `permissions.json`,
    and guard the route to match (`@token_required()` for `signed_in`, `@token_required([...])` for `roles`).
-   `python scripts/verify_permissions.py` fails until the two agree. A new route goes in `public` only when it
+   `python scripts/verify/verify_permissions.py` fails until the two agree. A new route goes in `public` only when it
    is meant for people with no account, and never in `legacy_open`.
 5. **Run the checks** from the repo root, each against a throwaway database:
-   `python scripts/verify_signup_options.py` (what the form is told),
-   `python scripts/verify_account_admin.py`,
-   `python scripts/verify_activation.py`,
-   `python scripts/verify_dataconfigs.py` (that these files are here and explained),
-   `python scripts/verify_permissions.py` (that `permissions.json` matches the routes). Set
+   `python scripts/verify/verify_signup_options.py` (what the form is told),
+   `python scripts/verify/verify_account_admin.py`,
+   `python scripts/verify/verify_activation.py`,
+   `python scripts/verify/verify_dataconfigs.py` (that these files are here and explained),
+   `python scripts/verify/verify_permissions.py` (that `permissions.json` matches the routes). Set
    `DEFAULT_PASSWORD`, `ADMIN_PASSWORD`, `TEACHER_PASSWORD`, `USER_PASSWORD` and `MY_PASSWORD` to
    passwords that follow the password rule if your `.env` has weak ones.
 

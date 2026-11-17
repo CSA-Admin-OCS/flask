@@ -9,15 +9,15 @@
 
 A new route with no entry fails 2. A route listed as guarded that answers an anonymous caller fails 4.
 
-Usage:  python scripts/verify_permissions.py        (from the flask repo root; about a minute)
+Usage:  python scripts/verify/verify_permissions.py        (from the flask repo root; about a minute)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import copy, datetime, json, os, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "rbac"))
 os.environ.setdefault("SECRET_KEY", "verify-permissions")
 
 import rbac_prober as prober

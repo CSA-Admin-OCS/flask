@@ -1,5 +1,5 @@
 """Routes labelled by a person reading each handler's source: the decorators on the function and its class, with role
-lists worked out from model/dataconfigs/account_types.json. scripts/rbac_reconcile.py --sample checks that the tools read
+lists worked out from model/dataconfigs/account_types.json. scripts/rbac/rbac_reconcile.py --sample checks that the tools read
 the same guard.
 
 who          who the guard lets through in production: "anyone", "signed_in" (any active account), "session" (the Flask

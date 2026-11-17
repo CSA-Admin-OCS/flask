@@ -7,9 +7,9 @@ This is RBAC phase 0, evidence A (the source) and B (the route table and hooks).
 answers to each kind of caller, is gathered separately. Nothing here says whether a route is meant to be open;
 it records what is written and leaves the decision to triage.
 
-  python scripts/rbac_inventory.py                      # counts only (the route list can show what is open)
-  python scripts/rbac_inventory.py --out report.json    # the full record for every method-and-route pair
-  python scripts/rbac_inventory.py --both-modes --out report.json   # development and IS_PRODUCTION=true, merged
+  python scripts/rbac/rbac_inventory.py                      # counts only (the route list can show what is open)
+  python scripts/rbac/rbac_inventory.py --out report.json    # the full record for every method-and-route pair
+  python scripts/rbac/rbac_inventory.py --both-modes --out report.json   # development and IS_PRODUCTION=true, merged
 
 The full record lists which routes are open, so write it outside the repo and do not commit or post it.
 
@@ -24,7 +24,7 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # What each guard decorator means. The name is all the source tells us, so a decorator that is not here is
 # recorded as "unknown" and never as "no guard".

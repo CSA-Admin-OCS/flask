@@ -2,12 +2,12 @@
 """Verify that the data files live in model/dataconfigs/, are found there by the code that reads them, and
 are explained in model/dataconfigs/README.md.
 
-Usage:  python scripts/verify_dataconfigs.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_dataconfigs.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import glob, json, os, re, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-dataconfigs")

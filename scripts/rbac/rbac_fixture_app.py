@@ -1,6 +1,6 @@
 """A small Flask app with one route for each way this codebase guards a route, and the ways it does not.
 
-scripts/verify_rbac_inventory.py checks that rbac_inventory.py reads each one correctly. The decorators have the
+scripts/verify/verify_rbac_inventory.py checks that rbac_inventory.py reads each one correctly. The decorators have the
 names the project's own use, because that is what the inventory reads; here they do nothing.
 """
 import os

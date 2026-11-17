@@ -67,7 +67,7 @@ pip install -r requirements.txt
   - From Extensions Marketplace install `SQLite3 Editor`
     - Open and view SQL database file `instance/volumes/user_management.db`
 
-  - Make a local `.env` file in root of project to contain your secret passwords. Every password must follow the same rule as Spring (8+ characters with an uppercase letter, a lowercase letter, a number, and one of `` ` ~ ! @ # $ % ^ & * ( ) ``), or the model rejects it when it seeds that account. Run `python scripts/verify_password_rule.py` to check.
+  - Make a local `.env` file in root of project to contain your secret passwords. Every password must follow the same rule as Spring (8+ characters with an uppercase letter, a lowercase letter, a number, and one of `` ` ~ ! @ # $ % ^ & * ( ) ``), or the model rejects it when it seeds that account. Run `python scripts/verify/verify_password_rule.py` to check.
 
   ```shell
   # Port configuration
@@ -419,7 +419,7 @@ On production the web container has no `mysqldump`, so take the dump on the host
 pass it in with `--backup-file`; the exact commands are in the migration runbook. A new
 column on an existing table breaks every query of that table until it exists, so run the
 upgrade right after `docker compose up -d --build`, with the dump already taken.
-`python scripts/verify_db_upgrade.py` checks all of this on a throwaway database, for both
+`python scripts/verify/verify_db_upgrade.py` checks all of this on a throwaway database, for both
 paths, so the rarely used rebuild is tested every time the common one is.
 
 ### Tables covered by the migration

@@ -3,16 +3,16 @@
 through, and names every way the answers can differ from it.
 
 The rules are checked on small records written here, one case each. Then the tools are run on this project and the
-result is compared with scripts/rbac_sample_labels.py, routes a person labelled by reading the source.
+result is compared with scripts/rbac/rbac_sample_labels.py, routes a person labelled by reading the source.
 
-Usage:  python scripts/verify_rbac_reconcile.py        (from the flask repo root; about two minutes)
+Usage:  python scripts/verify/verify_rbac_reconcile.py        (from the flask repo root; about two minutes)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import json, os, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "rbac"))
 os.environ.setdefault("SECRET_KEY", "verify-rbac-reconcile")
 
 import rbac_reconcile as rec
