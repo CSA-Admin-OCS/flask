@@ -11,10 +11,12 @@ decorators, and the role list the running app holds). rbac_prober.py says what e
   observed  what the app answered: refused (401, 403, or sent to the login page), answered, error, timeout
   findings  where the two differ, in the words listed at FINDINGS below
 
-  python scripts/rbac_reconcile.py                       # runs both tools on this repo; counts only
-  python scripts/rbac_reconcile.py --out report.json     # the full comparison, one record per method and route
-  python scripts/rbac_reconcile.py --inventory a.json --probe c.json    # reports made earlier
-  python scripts/rbac_reconcile.py --sample              # also check against scripts/rbac_sample_labels.py
+  python scripts/rbac/rbac_reconcile.py                       # runs both tools on this repo; counts only
+  python scripts/rbac/rbac_reconcile.py --out report.json     # the full comparison, one record per method and route
+  python scripts/rbac/rbac_reconcile.py --inventory a.json --probe c.json    # reports made earlier
+  python scripts/rbac/rbac_reconcile.py --sample              # also check against scripts/rbac/rbac_sample_labels.py
+  python scripts/rbac/rbac_reconcile.py --draft-policy permissions.json --owner NAME --review-by 2027-01-31
+                                                         # a first model/dataconfigs/permissions.json to finish by hand
 
 The full record shows which routes are open, so write it outside the repo and do not commit or post it.
 """
@@ -26,8 +28,8 @@ import subprocess
 import sys
 import tempfile
 
-SCRIPTS = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(SCRIPTS)
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))  # this folder, scripts/rbac: the tools import each other from here
+REPO = os.path.dirname(os.path.dirname(SCRIPTS))
 MODES = ("development", "production")
 
 # Callers with no account, and callers whose account must not be let in whatever its role
@@ -191,6 +193,34 @@ def check_sample(records, sample):
     return problems
 
 
+def draft_policy(records, owner, review_by):
+    """A first permissions.json from the guards as they are today, for a person to finish.
+
+    Every route says who its guard lets through in production. A route with no guard goes under legacy_open,
+    because the tools cannot tell an open route that is meant to be open from one nobody guarded: a person moves
+    the ones that are open on purpose to public.
+    """
+    policy = {"public": [], "public_restricted": [], "legacy_open": [], "open_in_development": [], "device_key": [],
+              "session": [], "signed_in": [], "roles": {}}
+    unsorted = []
+    for record in records:
+        request = f'{record["method"]} {record["rule"]}'
+        who = who_may_call(record, "production")
+        if who == "anyone":
+            unsorted.append(request)
+        elif isinstance(who, list):
+            for role in who:
+                policy["roles"].setdefault(role, []).append(request)
+        else:
+            policy[who].append(request)
+        if who != "anyone" and who_may_call(record, "development") == "anyone":
+            policy["open_in_development"].append(request)
+    if unsorted:
+        policy["legacy_open"].append({"owner": owner, "review_by": review_by, "requests": unsorted})
+    policy["roles"] = dict(sorted(policy["roles"].items()))
+    return policy
+
+
 def summary(records):
     """Counts only: nothing here names a route."""
     out = {"pairs": len(records), "not_probed": sum(1 for r in records if not r["probed"]), "by_mode": {}}
@@ -215,28 +245,32 @@ def limited_roles_of(repo=REPO):
     return sorted(t["role"] for t in types.values() if t.get("allowed_requests") is not None)
 
 
-def gather(repo=REPO, modes=MODES):
-    """Run the inventory and the prober on this repo and return (inventory records, probe records)."""
+def _run_tool(script, options, repo):
+    """Run one of the tools on the repo and return the records it writes with --out."""
     workdir = tempfile.mkdtemp(prefix="rbac-reconcile-")
-    inventory_path, probe_path = os.path.join(workdir, "inventory.json"), os.path.join(workdir, "probe.json")
+    out = os.path.join(workdir, "records.json")
     try:
         env = dict(os.environ)
         env.setdefault("SECRET_KEY", "rbac-reconcile")
-        for command in ([sys.executable, os.path.join(SCRIPTS, "rbac_inventory.py"), "--both-modes", "--out", inventory_path],
-                        [sys.executable, os.path.join(SCRIPTS, "rbac_prober.py"), "--out", probe_path] + (["--both-modes"] if "production" in modes else [])):
-            done = subprocess.run(command, cwd=repo, env=env, capture_output=True, text=True)
-            if done.returncode != 0:
-                sys.exit(f"{os.path.basename(command[1])} failed:\n{done.stderr[-1500:]}")
-        with open(inventory_path, encoding="utf-8") as fh:
-            inventory = json.load(fh)
-        with open(probe_path, encoding="utf-8") as fh:
-            probes = json.load(fh)
+        done = subprocess.run([sys.executable, os.path.join(SCRIPTS, script)] + options + ["--out", out], cwd=repo, env=env, capture_output=True, text=True)
+        if done.returncode != 0:
+            sys.exit(f"{script} failed:\n{done.stderr[-1500:]}")
+        with open(out, encoding="utf-8") as fh:
+            return json.load(fh)
     finally:
-        for path in (inventory_path, probe_path):
-            if os.path.exists(path):
-                os.remove(path)
+        if os.path.exists(out):
+            os.remove(out)
         os.rmdir(workdir)
-    return inventory, probes
+
+
+def project_inventory(repo=REPO):
+    """The inventory of this repo, in both modes."""
+    return _run_tool("rbac_inventory.py", ["--both-modes"], repo)
+
+
+def gather(repo=REPO):
+    """Run the inventory and the prober on this repo and return (inventory records, probe records)."""
+    return project_inventory(repo), _run_tool("rbac_prober.py", ["--both-modes"], repo)
 
 
 def main_cli():
@@ -244,6 +278,9 @@ def main_cli():
     parser.add_argument("--inventory", help="a report from rbac_inventory.py --both-modes --out (default: run it now)")
     parser.add_argument("--probe", help="a report from rbac_prober.py --both-modes --out (default: run it now)")
     parser.add_argument("--out", help="write the full comparison here (JSON), outside the repo")
+    parser.add_argument("--draft-policy", metavar="FILE", help="write a first permissions.json from today's guards, for a person to finish")
+    parser.add_argument("--owner", default="", help="with --draft-policy: who owns the review of the routes that are open today")
+    parser.add_argument("--review-by", default="", help="with --draft-policy: the date that review is due, YYYY-MM-DD")
     parser.add_argument("--sample", action="store_true", help="check the reading against the routes labelled by hand in rbac_sample_labels.py")
     args = parser.parse_args()
     if bool(args.inventory) != bool(args.probe):
@@ -266,6 +303,13 @@ def main_cli():
         for problem in problems:
             print("  " + problem)
         failed = bool(problems)
+    if args.draft_policy:
+        if not args.owner or not args.review_by:
+            parser.error("--draft-policy needs --owner and --review-by")
+        with open(args.draft_policy, "w", encoding="utf-8") as fh:
+            json.dump(draft_policy(records, args.owner, args.review_by), fh, indent=2)
+            fh.write("\n")
+        print(f"wrote a draft policy to {args.draft_policy}")
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             json.dump(records, fh, indent=1, sort_keys=True)

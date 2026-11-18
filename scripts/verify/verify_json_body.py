@@ -6,13 +6,13 @@ Sends each POST, PUT and DELETE route under /api no body, a list, null and a str
 Admin. Runs the real app against a throwaway SQLite database with the network blocked, and checksums
 the real dev DB before and after to prove it was never touched.
 
-Usage:  python scripts/verify_json_body.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_json_body.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import hashlib, logging, os, re, socket, sys, tempfile
 from datetime import datetime
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-json-body")

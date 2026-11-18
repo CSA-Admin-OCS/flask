@@ -8,12 +8,12 @@ it an older shape, then runs db_upgrade.py against copies of it. Each run is its
 process, so a column added to the models for one case can't leak into the next.
 Checksums the real dev DB before and after to prove it was never touched.
 
-Usage:  python scripts/verify_db_upgrade.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_db_upgrade.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import hashlib, json, os, secrets, shutil, sqlite3, subprocess, sys, tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 REAL_DB = os.path.join(REPO, "instance", "volumes", "user_management.db")
 PASSWORD = "Aa1!" + secrets.token_urlsafe(16)  # new every run; the accounts live only in throwaway databases
 UIDS = ["zz_one", "zz_two", "zz_three"]

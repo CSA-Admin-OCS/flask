@@ -4,12 +4,12 @@
 Starts the app in fresh processes with different environments and checks which ones start. Touches no
 database: the app is imported, never served, and no connection to MySQL is made.
 
-Usage:  python scripts/verify_secret_key_required.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_secret_key_required.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import os, subprocess, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 KEEP = ("PATH", "HOME", "LANG", "VIRTUAL_ENV", "PYTHONPATH")
 _failures = []
 

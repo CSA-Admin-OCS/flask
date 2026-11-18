@@ -1,4 +1,4 @@
-"""A small Flask app, and a place to keep its data, for scripts/verify_rbac_prober.py to probe.
+"""A small Flask app, and a place to keep its data, for scripts/verify/verify_rbac_prober.py to probe.
 
 Who is calling comes from a cookie called fixture_role, so the prober's callers need no login. The routes are the
 cases the prober has to get right: open, refused to anonymous callers, refused by role, leaking, writing, crashing,

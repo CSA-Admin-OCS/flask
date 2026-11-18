@@ -3,12 +3,12 @@
 
 Runs against a throwaway SQLite DB and checksums the real dev DB before and after to prove it was never touched.
 
-Usage:  python scripts/verify_update_user_guard.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_update_user_guard.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import hashlib, os, secrets, sys, tempfile
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-update-user-guard")

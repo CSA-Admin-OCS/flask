@@ -8,6 +8,7 @@ something, or what a form offers, reads these files; it does not name a role, a 
 |---|---|---|---|
 | `account_types.json` | The kinds of account, their roles, who counts as staff, how long a verification lasts, what each type may do, and how each behaves on the sign-up form | `model/account_types.py` | `GET /api/signup-options` (the form's part only) |
 | `schools.json` | The schools a student can choose at sign-up | `model/schools.py` | `GET /api/signup-options` |
+| `permissions.json` | Who may make each request: open to anyone, any signed-in account, or only some roles | `model/permissions.py` | not sent |
 
 Each file is added to this folder in the change that makes its values data. Data files that are not
 here yet: `model/presence_schedules.json`, the starter bell schedules for the presence system.
@@ -59,6 +60,42 @@ A list of `{"name": ..., "label": ...}`. The **name** is saved on the account; t
 form shows. Names must be unique. Nothing checks an account's school against the list: it is what the
 form offers, not a rule about who can have an account.
 
+## permissions.json
+
+One file that answers "who may call this?" for every request the app has. A request is written
+`"METHOD route"`, with the route as Flask knows it: `"GET /api/id"`, `"POST /api/user/<string:uid>/verify"`.
+Every request is in exactly one of these lists. **A request in none of them is one nobody may make.**
+
+| List | Who may make the request |
+|---|---|
+| `public` | Anyone, with or without an account, on purpose: the home page, login, sign-up. |
+| `public_restricted` | Anyone, on purpose, but the route runs code or spends a provider's credit. Nothing goes here until it has been reviewed to run in a sandbox and under a rate limit. Empty today. |
+| `legacy_open` | Anyone, because it has always been so and nobody has yet decided that it should be. Groups of requests, each with an `owner` and a `review_by` date. The aim is for this list to get shorter: each request moves to `public`, or to a list that needs an account. |
+| `device_key` | A device that sends the device key. The route checks the key. |
+| `session` | A page behind the Flask session login. |
+| `signed_in` | Any active account. |
+| `roles` | For each role, the requests only some roles may make. A request for Teachers and Admins is in both lists. |
+
+`open_in_development` is not a list of its own kind: it names requests that are open while `IS_PRODUCTION`
+is not true. Each must also be in `signed_in` or `roles`, which says who may make it in production.
+
+**Today the file describes the guards; it does not replace them.** It is checked against the code, and nothing
+reads it to refuse a request yet. A check written inside a route (an account may change only its own record)
+stays in the route.
+
+The loader refuses a request that is in two lists, a role that `account_types.json` does not have, an entry
+that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
+
+`python scripts/verify/verify_permissions.py` is the check to run whenever a route is added or changed. It fails when:
+
+- a route has no entry, or an entry has no route;
+- the file and the guard on a route say different things, in development or in production;
+- a request not listed as open answers a caller with no account, when really called;
+- a `legacy_open` group is past its `review_by` date.
+
+It calls the routes on a throwaway copy of the app with no network and no provider keys
+(`scripts/rbac/rbac_prober.py`), so it is safe to run anywhere.
+
 ## What the sign-up page is told
 
 `GET /api/signup-options` is public, because the form is shown to people with no account. It sends the
@@ -74,11 +111,16 @@ never ends up with nothing to choose.
 3. **Rename a role** (say `Teacher` becomes `Instructor`): change it in `staff_roles`, in the type, and in
    the accounts already saved (a database update: roles are stored on each account). Code does not name
    the roles, so that is all.
-4. **Run the checks** from the repo root, each against a throwaway database:
-   `python scripts/verify_signup_options.py` (what the form is told),
-   `python scripts/verify_account_admin.py`,
-   `python scripts/verify_activation.py`,
-   `python scripts/verify_dataconfigs.py` (that these files are here and explained). Set
+4. **Add or change a route:** add its request to the list that says who may make it in `permissions.json`,
+   and guard the route to match (`@token_required()` for `signed_in`, `@token_required([...])` for `roles`).
+   `python scripts/verify/verify_permissions.py` fails until the two agree. A new route goes in `public` only when it
+   is meant for people with no account, and never in `legacy_open`.
+5. **Run the checks** from the repo root, each against a throwaway database:
+   `python scripts/verify/verify_signup_options.py` (what the form is told),
+   `python scripts/verify/verify_account_admin.py`,
+   `python scripts/verify/verify_activation.py`,
+   `python scripts/verify/verify_dataconfigs.py` (that these files are here and explained),
+   `python scripts/verify/verify_permissions.py` (that `permissions.json` matches the routes). Set
    `DEFAULT_PASSWORD`, `ADMIN_PASSWORD`, `TEACHER_PASSWORD`, `USER_PASSWORD` and `MY_PASSWORD` to
    passwords that follow the password rule if your `.env` has weak ones.
 

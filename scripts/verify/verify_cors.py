@@ -4,12 +4,12 @@
 Sends real requests with each Origin header through the app and checks that only our own sites are echoed
 back with Access-Control-Allow-Credentials. Touches no database.
 
-Usage:  python scripts/verify_cors.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_cors.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import os, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
 os.environ.setdefault("SECRET_KEY", "verify-cors")

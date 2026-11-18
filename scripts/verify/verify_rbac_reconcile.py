@@ -3,16 +3,16 @@
 through, and names every way the answers can differ from it.
 
 The rules are checked on small records written here, one case each. Then the tools are run on this project and the
-result is compared with scripts/rbac_sample_labels.py, routes a person labelled by reading the source.
+result is compared with scripts/rbac/rbac_sample_labels.py, routes a person labelled by reading the source.
 
-Usage:  python scripts/verify_rbac_reconcile.py        (from the flask repo root; about two minutes)
+Usage:  python scripts/verify/verify_rbac_reconcile.py        (from the flask repo root; about two minutes)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import json, os, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "rbac"))
 os.environ.setdefault("SECRET_KEY", "verify-rbac-reconcile")
 
 import rbac_reconcile as rec
@@ -148,6 +148,15 @@ def main():
     check("a labelled route that does not exist is reported", rec.check_sample(listed, [{"request": "GET /gone", "who": "anyone"}]) == ["GET /gone: no such route"])
     role_route = rec.reconcile([route("roles", ["token_required"], roles=["Teacher", "Admin"], rule="/d")], [], [])
     check("a role list label matches in any order", rec.check_sample(role_route, [{"request": "GET /d", "who": ["Teacher", "Admin"]}]) == [])
+
+    # ---- a first policy file from the guards
+    draft = rec.draft_policy(listed + role_route, "someone", "2027-01-31")
+    check("a draft policy lists each route under who its guard lets through in production",
+          draft["signed_in"] == ["GET /a", "GET /b"] and draft["roles"] == {"Admin": ["GET /d"], "Teacher": ["GET /d"]}, str(draft))
+    check("a route with no guard goes to legacy_open with the owner and date, never to public: only a person can say it is open on purpose",
+          draft["public"] == [] and draft["legacy_open"] == [{"owner": "someone", "review_by": "2027-01-31", "requests": ["GET /c", "GET /static/<path:filename>"]}])
+    check("a route open only in development is marked as that, and still listed for production", draft["open_in_development"] == ["GET /b"])
+    check("a draft with no open route has no empty legacy_open group", rec.draft_policy(role_route, "someone", "2027-01-31")["legacy_open"] == [])
 
     text = json.dumps(rec.summary(listed))
     check("the summary counts and names no route", "/a" not in text and "/static" not in text and rec.summary(listed)["pairs"] == 4 and rec.summary(listed)["not_probed"] == 1)

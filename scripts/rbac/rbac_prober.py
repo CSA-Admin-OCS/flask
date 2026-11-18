@@ -14,8 +14,8 @@ suggest. It is built so that running it can do no harm:
 
 Callers: anonymous, invalid_token, guest, user, mentor, teacher, admin, inactive_mentor, expired_guest.
 
-  python scripts/rbac_prober.py                     # development mode; counts only
-  python scripts/rbac_prober.py --both-modes --out report.json    # also IS_PRODUCTION=true, full record
+  python scripts/rbac/rbac_prober.py                     # development mode; counts only
+  python scripts/rbac/rbac_prober.py --both-modes --out report.json    # also IS_PRODUCTION=true, full record
 
 The full record shows which routes are open, so write it outside the repo and do not commit or post it.
 """
@@ -35,8 +35,8 @@ import subprocess
 import sys
 import tempfile
 
-SCRIPTS = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(SCRIPTS)
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))  # this folder, scripts/rbac: the tools import each other from here
+REPO = os.path.dirname(os.path.dirname(SCRIPTS))
 
 CALLERS = ["anonymous", "invalid_token", "guest", "user", "mentor", "teacher", "admin", "inactive_mentor", "expired_guest"]
 # The only variables the app process is given from the one this runs in. Everything else, above all every provider
@@ -418,7 +418,7 @@ class RealState:
 
 # ---------------------------------------------------------------- running it
 
-def _child(mode, out_path, only):
+def _child(mode, out_path, only, wanted=None):
     sys.path.insert(0, SCRIPTS)
     sys.path.insert(0, REPO)
     os.chdir(REPO)
@@ -429,7 +429,8 @@ def _child(mode, out_path, only):
     workdir = tempfile.mkdtemp(prefix="rbac-prober-db-")
     state = RealState(app, db, workdir)
     state.seed()
-    records = run_probe(app, state.callers(), state, only=only)
+    callers = {name: setup for name, setup in state.callers().items() if not wanted or name in wanted}
+    records = run_probe(app, callers, state, only=only)
     for r in records:
         r["mode"] = mode
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -460,8 +461,12 @@ def child_env(mode):
                                   "RFID_API_KEY": "rbac-prober-" + secrets.token_hex(8)})
 
 
-def probe_project(modes, only=None):
-    """Probe a copy of this repo in each mode, each in a child process with a clean environment."""
+def probe_project(modes, only=None, callers=None):
+    """Probe a copy of this repo in each mode, each in a child process with a clean environment.
+    callers limits the run to some of CALLERS; without it every kind of caller is used."""
+    unknown = sorted(set(callers or ()) - set(CALLERS))
+    if unknown:
+        raise ValueError(f"not a kind of caller: {', '.join(unknown)}")
     records = []
     sandbox = tempfile.mkdtemp(prefix="rbac-prober-repo-")
     try:
@@ -469,9 +474,11 @@ def probe_project(modes, only=None):
         for mode in modes:
             out = os.path.join(sandbox, f"probe-{mode}.json")
             env = child_env(mode)
-            command = [sys.executable, os.path.join(sandbox, "scripts", "rbac_prober.py"), "--child", mode, "--child-out", out]
+            command = [sys.executable, os.path.join(sandbox, "scripts", "rbac", "rbac_prober.py"), "--child", mode, "--child-out", out]
             if only:
                 command += ["--only", only]
+            if callers:
+                command += ["--callers", ",".join(callers)]
             done = subprocess.run(command, cwd=sandbox, env=env, capture_output=True, text=True)
             if done.returncode != 0 or not os.path.exists(out):
                 sys.exit(f"{mode} run failed:\n{done.stderr[-1500:]}")
@@ -487,13 +494,15 @@ def main_cli():
     parser.add_argument("--out", help="write the full records here (JSON), outside the repo")
     parser.add_argument("--both-modes", action="store_true", help="also run with IS_PRODUCTION=true")
     parser.add_argument("--only", help="only routes containing this text")
+    parser.add_argument("--callers", help="only these kinds of caller, separated by commas (default: all of them)")
     parser.add_argument("--child", choices=["development", "production"], help=argparse.SUPPRESS)
     parser.add_argument("--child-out", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    callers = [c for c in (args.callers or "").split(",") if c] or None
     if args.child:
-        _child(args.child, args.child_out, args.only)
+        _child(args.child, args.child_out, args.only, callers)
         return
-    records = probe_project(["development", "production"] if args.both_modes else ["development"], args.only)
+    records = probe_project(["development", "production"] if args.both_modes else ["development"], args.only, callers)
     for mode in sorted({r["mode"] for r in records}):
         print(f"== {mode}")
         print(json.dumps(summary([r for r in records if r["mode"] == mode]), indent=1))

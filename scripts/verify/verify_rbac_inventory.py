@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Verify that rbac_inventory.py reads every way a route is guarded, or not guarded, correctly.
 
-Runs the inventory over scripts/rbac_fixture_app.py, which has one route for each pattern, and compares each
+Runs the inventory over scripts/rbac/rbac_fixture_app.py, which has one route for each pattern, and compares each
 record with what the fixture's source says. Also checks that the inventory is the same on two runs, that it
 notices a guard the source does not show, and that the project's own app can be inventoried. Calls no route and
 touches no database.
 
-Usage:  python scripts/verify_rbac_inventory.py        (from the flask repo root)
+Usage:  python scripts/verify/verify_rbac_inventory.py        (from the flask repo root)
 Exit:   0 all checks passed, 1 otherwise.
 """
 import json, os, subprocess, sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 os.chdir(REPO)
 sys.path.insert(0, REPO)
-sys.path.insert(0, os.path.join(REPO, "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts", "rbac"))
 os.environ.setdefault("SECRET_KEY", "verify-rbac-inventory")
 
 import rbac_inventory as inv
@@ -34,7 +34,7 @@ def records_by(records):
 
 
 def run_fixture(production, **kwargs):
-    code = ("import json,sys; sys.path.insert(0,'scripts'); import rbac_inventory as i; from rbac_fixture_app import make_app;"
+    code = ("import json,sys; sys.path.insert(0,'scripts/rbac'); import rbac_inventory as i; from rbac_fixture_app import make_app;"
             f"print('J:'+json.dumps(i.inventory(make_app(**{kwargs!r}))))")
     env = {k: v for k, v in os.environ.items() if k != "IS_PRODUCTION"}
     env["IS_PRODUCTION"] = "true" if production else "false"
@@ -160,7 +160,7 @@ def main():
     check("the summary counts by guard kind and names no route", "/open" not in json.dumps(summary) and summary["pairs"] == len(records))
 
     # the real app: it loads, every pair has a record, nothing crashes the analyser
-    done = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "rbac_inventory.py")], capture_output=True, text=True, cwd=REPO)
+    done = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "rbac", "rbac_inventory.py")], capture_output=True, text=True, cwd=REPO)
     real = json.loads(done.stdout[done.stdout.index("{"):])
     check("the project's own app can be inventoried", done.returncode == 0 and real["pairs"] > 200, f"exit {done.returncode}, pairs {real.get('pairs')}")
     check("the real app's summary names no route", "/api" not in done.stdout)
