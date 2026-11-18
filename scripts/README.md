@@ -33,8 +33,11 @@ rbac/rbac_prober.py      what each route really answers ----------+             
                                                                               v
 model/dataconfigs/permissions.json   who may make each request (data)
       |
-      v
-verify/verify_permissions.py   fails when the file and the routes disagree
+      +--> verify/verify_permissions.py   fails when the file and the routes disagree
+      |
+      +--> api/access.py   checks every request against it (shadow mode until `enforce` names callers)
+                 |
+                 +--> verify/verify_access.py   proves enforcing it changes no answer
 ```
 
 Reports from `rbac_inventory.py`, `rbac_prober.py` and `rbac_reconcile.py` show which routes are open, so write them
@@ -55,3 +58,4 @@ outside the repo with `--out` and do not commit or post them. With no `--out` th
 | `rbac/rbac_sample_labels.py` | 40 routes labelled by a person reading each handler, drawn from every kind of guard. Data, not a program. | A tool checked only against itself proves nothing; this is the person's answer. | Never on its own. Edit it only when a labelled route's guard really changes. | n/a |
 | `verify/verify_rbac_reconcile.py` | Checks each comparison rule on small records written for it, then runs the tools on this project against the 40 labelled routes. | So the comparison can be trusted. | After changing `rbac_reconcile.py` or `rbac_inventory.py`. | 65 s |
 | `verify/verify_permissions.py` | Checks `model/dataconfigs/permissions.json` against the app: every route has an entry and every entry has a route, the file says what the guards say, no request not listed as open answers a caller with no account (it really calls them), no `legacy_open` group is past its review date. | So the file can never drift from the code, and a new route cannot be added without deciding who may call it. | **Whenever a route is added or changed, and before merging.** Not run by CI yet. | 23 s |
+| `verify/verify_access.py` | Checks the request check in `api/access.py` on a small app, then calls every route as every kind of caller in both modes, once in shadow mode and once enforced for everyone, and fails if any answer differs. | This is the gate for turning enforcement on: it shows that enforcing the file changes no answer. | Before adding a caller to `enforce` in `permissions.json`, and after changing `api/access.py` or `api/authorize.py`. | 2.5 min |

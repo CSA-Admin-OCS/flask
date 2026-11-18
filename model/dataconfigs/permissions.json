@@ -1,4 +1,5 @@
 {
+  "enforce": [],
   "public": [
     "GET /",
     "POST /api/authenticate",

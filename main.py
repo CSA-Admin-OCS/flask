@@ -14,6 +14,7 @@ from model.presence_schedule import seed_schedules
 # API endpoints
 from api.user import user_api 
 from api.authorize import throttled
+from api import access
 from api.python_exec_api import python_exec_api
 from api.javascript_exec_api import javascript_exec_api
 from api.section import section_api
@@ -137,6 +138,9 @@ def load_user(user_id):
     if user.expired():
         return None  # an account with a lifetime (a guest) has no session once it has passed
     return user
+
+# Every request is checked against model/dataconfigs/permissions.json before it reaches a route (see api/access.py)
+access.init_app(app)
 
 @app.before_request
 def limit_session_accounts():

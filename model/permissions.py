@@ -18,6 +18,10 @@ in none of them is one nobody may make:
   open_in_development  requests that are open while IS_PRODUCTION is not true, and in production are held to the
                        signed_in or roles list they are also in
 
+  enforce              the callers this file is enforced for: "anonymous" (no usable login) and role names. A caller
+                       in it who is not allowed is refused before the route (api/access.py). For every other
+                       caller the file is only compared with what the route does, and a difference is logged.
+
 This file says who gets as far as the route. A check written inside a route (that an account may change only its own
 record, for one) is still made there.
 """
@@ -30,7 +34,8 @@ from model import account_types
 
 OPEN_TO_ANYONE = ("public", "public_restricted", "legacy_open")
 LISTS = ("public", "public_restricted", "open_in_development", "device_key", "session", "signed_in")
-KEYS = LISTS + ("legacy_open", "roles")
+KEYS = LISTS + ("legacy_open", "roles", "enforce")
+ANONYMOUS = "anonymous"
 _REQUEST = re.compile(r"(GET|POST|PUT|PATCH|DELETE) /\S*")
 
 
@@ -89,6 +94,12 @@ def _check(data, known_roles):
     for request in data["open_in_development"]:
         if where.get(request) != "signed_in" and request not in in_a_role_list:
             raise ValueError(f"permissions.json: {request} is open in development, so signed_in or roles must say who may make it in production")
+    enforce = data["enforce"]
+    if not isinstance(enforce, list) or len(set(map(str, enforce))) != len(enforce):
+        raise ValueError("permissions.json: enforce must be a list of callers, each once")
+    for caller in enforce:
+        if caller != ANONYMOUS and caller not in known_roles:
+            raise ValueError(f"permissions.json: enforce names {caller}, which is not \"anonymous\" or a role in account_types.json")
 
 
 def _read():
@@ -103,6 +114,7 @@ _data = _read()
 _legacy_open = frozenset(request for group in _data["legacy_open"] for request in group["requests"])
 _in = {name: frozenset(_data[name]) for name in LISTS}
 _in["legacy_open"] = _legacy_open
+_enforce = frozenset(_data["enforce"])
 
 
 def who_may_call(method, route, production=True):
@@ -131,6 +143,16 @@ def every_request():
     for requests in _data["roles"].values():
         listed.update(requests)
     return listed
+
+
+def enforced(caller):
+    """Whether the file is enforced for this caller: "anonymous" or a role."""
+    return caller in _enforce
+
+
+def enforcing():
+    """Whether the file is enforced for anyone at all."""
+    return bool(_enforce)
 
 
 def legacy_open_groups():

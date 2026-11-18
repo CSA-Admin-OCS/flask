@@ -200,7 +200,7 @@ def draft_policy(records, owner, review_by):
     because the tools cannot tell an open route that is meant to be open from one nobody guarded: a person moves
     the ones that are open on purpose to public.
     """
-    policy = {"public": [], "public_restricted": [], "legacy_open": [], "open_in_development": [], "device_key": [],
+    policy = {"enforce": [], "public": [], "public_restricted": [], "legacy_open": [], "open_in_development": [], "device_key": [],
               "session": [], "signed_in": [], "roles": {}}
     unsorted = []
     for record in records:

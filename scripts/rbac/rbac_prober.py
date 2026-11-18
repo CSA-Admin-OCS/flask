@@ -191,9 +191,10 @@ def run_probe(app, callers, state, only=None, timeout=TIMEOUT_SECONDS, progress=
     state    .victim_uid, .canaries (strings that must never come back to a caller), .fresh() makes a new copy of the
              data before every call, .fingerprint() says what the data and files look like now, .roles says which
              role each caller's account holds
-    only     a substring of the route to limit the run to
+    only     text a route must contain to be called; several texts separated by commas call a route with any of them
     """
     import rbac_inventory as inv
+    from flask import request
     records = []
     roles = getattr(state, "roles", None) or {}
     app.config["TESTING"] = True
@@ -201,8 +202,9 @@ def run_probe(app, callers, state, only=None, timeout=TIMEOUT_SECONDS, progress=
     previous = signal.signal(signal.SIGALRM, _alarm)
     try:
         rules = sorted(app.url_map.iter_rules(), key=lambda r: r.rule)
+        wanted = [text for text in (only or "").split(",") if text]
         for rule in rules:
-            if rule.endpoint == "static" or (only and only not in rule.rule):
+            if rule.endpoint == "static" or (wanted and not any(text in rule.rule for text in wanted)):
                 continue
             url = build_url(rule.rule, state.victim_uid)
             for method, handler, view_class in inv._handlers(app, rule):
@@ -215,13 +217,16 @@ def run_probe(app, callers, state, only=None, timeout=TIMEOUT_SECONDS, progress=
                     setup(client)
                     before = state.fingerprint()
                     record = {"method": method, "rule": rule.rule, "caller": caller, "role": roles.get(caller),
-                              "payload_keys": sorted(body) + sorted(query)}
+                              "payload_keys": sorted(body) + sorted(query), "decision": None}
                     signal.setitimer(signal.ITIMER_REAL, timeout)
                     try:
                         kwargs = {"method": method, "query_string": query}
                         if method in MUTATING:
                             kwargs["json"] = body
-                        response = client.open(url, **kwargs)
+                        with client:  # keeps the request at hand until the block ends
+                            response = client.open(url, **kwargs)
+                            # what the app's own access check decided, if it has one and leaves it on the request
+                            record["decision"] = getattr(request, "access_decision", None)
                         text = response.get_data(as_text=True)
                         headers = "\n".join(f"{k}: {v}" for k, v in response.headers)
                         record["status"] = response.status_code
@@ -461,9 +466,11 @@ def child_env(mode):
                                   "RFID_API_KEY": "rbac-prober-" + secrets.token_hex(8)})
 
 
-def probe_project(modes, only=None, callers=None):
+def probe_project(modes, only=None, callers=None, overlay=None):
     """Probe a copy of this repo in each mode, each in a child process with a clean environment.
-    callers limits the run to some of CALLERS; without it every kind of caller is used."""
+    callers limits the run to some of CALLERS; without it every kind of caller is used.
+    overlay is {path in the repo: text}: files to change in the copy before it is probed, to see what the app would
+    answer with them."""
     unknown = sorted(set(callers or ()) - set(CALLERS))
     if unknown:
         raise ValueError(f"not a kind of caller: {', '.join(unknown)}")
@@ -471,6 +478,13 @@ def probe_project(modes, only=None, callers=None):
     sandbox = tempfile.mkdtemp(prefix="rbac-prober-repo-")
     try:
         _copy_tracked_files(sandbox)
+        for name, text in (overlay or {}).items():
+            target = os.path.join(sandbox, name)
+            if os.path.commonpath([os.path.realpath(target), os.path.realpath(sandbox)]) != os.path.realpath(sandbox):
+                raise ValueError(f"an overlay path must be inside the repo: {name}")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(text)
         for mode in modes:
             out = os.path.join(sandbox, f"probe-{mode}.json")
             env = child_env(mode)
@@ -493,7 +507,7 @@ def main_cli():
     parser = argparse.ArgumentParser(description="Call every route as each kind of caller and record what it answers.")
     parser.add_argument("--out", help="write the full records here (JSON), outside the repo")
     parser.add_argument("--both-modes", action="store_true", help="also run with IS_PRODUCTION=true")
-    parser.add_argument("--only", help="only routes containing this text")
+    parser.add_argument("--only", help="only routes containing this text; several texts separated by commas")
     parser.add_argument("--callers", help="only these kinds of caller, separated by commas (default: all of them)")
     parser.add_argument("--child", choices=["development", "production"], help=argparse.SUPPRESS)
     parser.add_argument("--child-out", help=argparse.SUPPRESS)

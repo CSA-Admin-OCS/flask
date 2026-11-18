@@ -85,6 +85,12 @@ def make_probe_app(state):
     def db():
         return sqlite3.connect(state.work)
 
+    @app.before_request
+    def decide_for_one_route():
+        """Stands in for an app's own access check, which leaves its decision on the request."""
+        if request.path == "/admin-only":
+            request.access_decision = {"allow": role() == "Admin", "why": "fixture"}
+
     @app.route("/open")
     def open_route():
         return jsonify({"hello": "anyone"})

@@ -67,6 +67,11 @@ def main():
     check("a route that hangs is a timeout, and the run goes on", set(statuses(got, "GET", "/hang").values()) == {"timeout"})
     check("a route nobody guards but that needs no login is told apart from one that crashes", statuses(got, "GET", "/open")["anonymous"] == 200)
 
+    decisions = {c: got[("POST", "/admin-only", c)]["decision"] for c in prober.CALLERS}
+    check("the app's own access decision is recorded for each call, when the app leaves one",
+          decisions["admin"] == {"allow": True, "why": "fixture"} and decisions["user"] == {"allow": False, "why": "fixture"} and decisions["anonymous"]["allow"] is False, str(decisions))
+    check("a call where the app left no decision records none, not the one from the call before", all(got[("GET", "/open", c)]["decision"] is None for c in prober.CALLERS))
+
     # ---- leaks
     leak_any = got[("GET", "/leaks-to-anyone", "anonymous")]
     check("canary data in a body is noticed, even for an anonymous caller", leak_any["canary"] == [CANARY_NAME], str(leak_any["canary"]))
@@ -79,6 +84,9 @@ def main():
     check("a GET that writes is marked as writing", all(got[("GET", "/writes-on-get", c)]["wrote"] for c in prober.CALLERS))
     check("a write to a file, not the database, is noticed", all(got[("POST", "/writes-a-file", c)]["wrote"] for c in prober.CALLERS))
     check("a route that writes nothing is not marked", not any(got[("GET", "/open", c)]["wrote"] for c in prober.CALLERS))
+
+    several = {r["rule"] for r in prober.run_probe(app, {"anonymous": callers["anonymous"]}, state, only="/open,/crash")}
+    check("a run can be limited to routes containing any of several texts", several == {"/open", "/crash"}, str(several))
 
     # ---- fresh data for every call
     prober.run_probe(app, callers, state, only="/counter")
@@ -177,6 +185,17 @@ def main():
         check("a kind of caller that does not exist is refused, not skipped", False)
     except ValueError:
         check("a kind of caller that does not exist is refused, not skipped", True)
+    marker = "/api/overlay-marker-route"
+    with open(os.path.join(REPO, "main.py"), encoding="utf-8") as fh:
+        with_a_route = fh.read() + f"\n\n@app.route('{marker}')\ndef overlay_marker_route():\n    return 'added in the copy'\n"
+    changed = prober.probe_project(["development"], only=marker, callers=["anonymous"], overlay={"main.py": with_a_route})
+    check("a file can be changed in the copy that is probed: a route added there is called, and the repo has no such route",
+          [r["rule"] for r in changed] == [marker] and prober.probe_project(["development"], only=marker, callers=["anonymous"]) == [])
+    try:
+        prober.probe_project(["development"], only=marker, overlay={"../outside.txt": "x"})
+        check("an overlay cannot write outside the copy", False)
+    except ValueError:
+        check("an overlay cannot write outside the copy", True)
     after = tree_state()
     check("probing the project writes nothing into the repo", before is None or before == after, "git status changed" if before != after else "")
     check("a summary names no route", "/api" not in str(prober.summary(project)))
