@@ -79,9 +79,25 @@ Every request is in exactly one of these lists. **A request in none of them is o
 `open_in_development` is not a list of its own kind: it names requests that are open while `IS_PRODUCTION`
 is not true. Each must also be in `signed_in` or `roles`, which says who may make it in production.
 
-**Today the file describes the guards; it does not replace them.** It is checked against the code, and nothing
-reads it to refuse a request yet. A check written inside a route (an account may change only its own record)
-stays in the route.
+**Every request is checked against this file before it reaches a route** (`api/access.py`). The guards on the
+routes stay, and a check written inside a route (an account may change only its own record) stays in the route.
+What the check does with its decision depends on `enforce`:
+
+| `enforce` | What happens to a caller the file does not allow |
+|---|---|
+| `[]` (shadow mode) | Nothing changes. If the route answers anyway, a line is written to the log: `permissions (shadow): would refuse GET /api/x for anonymous`. |
+| `["anonymous"]` | A caller with no usable login is refused here, with the answer the route's own guard gives. Signed-in callers are still in shadow mode. |
+| `["anonymous", "Guest", "User", ...]` | The same for each role named. |
+
+Once a caller is in `enforce`, the file is what decides for them:
+
+- **A route in no list refuses them**, even if the route itself has no guard. A new route cannot be open by accident.
+- **Moving an entry closes a route** with no change to the code: a `legacy_open` request moved to
+  `signed_in` now needs a login. Opening a route that has a guard takes a change to the guard as well, and
+  `verify_permissions.py` reports the two disagreeing until it is made.
+
+In shadow mode a mistake in the check is logged and the request goes on, so the check cannot be the reason a
+request fails.
 
 The loader refuses a request that is in two lists, a role that `account_types.json` does not have, an entry
 that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
@@ -95,6 +111,10 @@ that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
 
 It calls the routes on a throwaway copy of the app with no network and no provider keys
 (`scripts/rbac/rbac_prober.py`), so it is safe to run anywhere.
+
+`python scripts/verify/verify_access.py` is the check to run before adding a caller to `enforce`. It calls every
+route as every kind of caller, in development and production mode, once in shadow mode and once enforced
+for everyone, and fails if any answer differs. It takes about four minutes.
 
 ## What the sign-up page is told
 
@@ -120,7 +140,8 @@ never ends up with nothing to choose.
    `python scripts/verify/verify_account_admin.py`,
    `python scripts/verify/verify_activation.py`,
    `python scripts/verify/verify_dataconfigs.py` (that these files are here and explained),
-   `python scripts/verify/verify_permissions.py` (that `permissions.json` matches the routes). Set
+   `python scripts/verify/verify_permissions.py` (that `permissions.json` matches the routes),
+   `python scripts/verify/verify_access.py` (that enforcing `permissions.json` changes no answer). Set
    `DEFAULT_PASSWORD`, `ADMIN_PASSWORD`, `TEACHER_PASSWORD`, `USER_PASSWORD` and `MY_PASSWORD` to
    passwords that follow the password rule if your `.env` has weak ones.
 

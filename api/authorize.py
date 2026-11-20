@@ -36,6 +36,121 @@ def throttled(user):
     return False
 
 
+def identify():
+    """Who is making this request: (user, None), or (None, the 401 answer) when there is no usable login.
+
+    The Flask-Login session is asked first, then the JWT in the cookie or the Authorization header. Worked out once
+    for each request, so the access check that runs before every request and the guard on a route always see the
+    same caller. It is kept on the request itself and not on flask.g, which several requests can share when they
+    are made inside one app context (as test scripts do).
+    """
+    this_request = request._get_current_object()
+    if not hasattr(this_request, "identified_caller"):
+        this_request.identified_caller = _identify()
+    return this_request.identified_caller
+
+
+def _identify():
+    # Method 1: Flask-Login session authentication (faster)
+    if current_user.is_authenticated:
+        return current_user, None
+
+    # Method 2: fall back to JWT token authentication
+    token = request.cookies.get(current_app.config.get("JWT_TOKEN_NAME"))
+    if not token:
+        auth_header = request.headers.get('Authorization', request.headers.get('authorization', '')) or ''
+        if auth_header.startswith('Bearer '):
+            token = auth_header.split(' ', 1)[1].strip()
+        elif auth_header:
+            token = auth_header.strip()
+
+    if not token:
+        return None, ({
+            "message": "Authentication required. No session or token found.",
+            "data": None,
+            "error": "Unauthorized"
+        }, 401)
+
+    try:
+        # Decode the token and retrieve the user data
+        data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        user = User.query.filter_by(_uid=data["_uid"]).first()
+
+        if user is None:
+            return None, ({
+                "message": "Invalid Authentication token!",
+                "data": None,
+                "error": "Unauthorized"
+            }, 401)
+
+        # Tokens issued before this field existed have no token_version claim
+        # (treated as 0); reject if it doesn't match the account's current
+        # value -- i.e. the password has changed since this token was issued.
+        if data.get("token_version", 0) != (user.token_version or 0):
+            return None, ({
+                "message": "Token is no longer valid -- password has changed.",
+                "data": None,
+                "error": "Unauthorized"
+            }, 401)
+
+        return user, None
+
+    except jwt.ExpiredSignatureError:
+        return None, ({
+            "message": "Token has expired!",
+            "data": None,
+            "error": "Unauthorized"
+        }, 401)
+    except jwt.InvalidTokenError:
+        return None, ({
+            "message": "Invalid token!",
+            "data": None,
+            "error": "Unauthorized"
+        }, 401)
+    except Exception as e:
+        return None, ({
+            "message": "Something went wrong decoding the token!",
+            "data": None,
+            "error": str(e)
+        }, 500)
+
+
+def account_refusal(user, deactivate_expired=True):
+    """The 403 answer for an account that may not be used now, or None when it may.
+
+    An account type can last only a few hours (see model/dataconfigs/account_types.json). When it has passed the
+    account is made inactive, and its record is kept. An inactive account is not authorized until a Teacher/Admin
+    verifies it.
+    """
+    if user.expired():
+        if user.active and deactivate_expired:
+            user.deactivate()
+        return {
+            "message": "This account has expired.",
+            "data": None,
+            "error": "Forbidden"
+        }, 403
+    if not user.active:
+        return {
+            "message": "Account pending verification.",
+            "data": None,
+            "error": "Forbidden"
+        }, 403
+    return None
+
+
+def role_refusal(user, roles):
+    """The 403 answer when the account's role is not one of roles, or None when it is."""
+    required_roles = list(roles) if isinstance(roles, (list, tuple)) else [roles]
+    if user.role not in required_roles:
+        return {
+            "message": f"Insufficient permissions. Required roles: {', '.join(required_roles)}",
+            "data": None,
+            "error": "Forbidden"
+        }, 403
+    return None
+
+
 def auth_required(roles=None):
     '''
     Hybrid authentication decorator supporting both session and JWT token authentication.
@@ -64,96 +179,17 @@ def auth_required(roles=None):
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
-            user = None
-            auth_method = None
-            
-            # Method 1: Try Flask-Login session authentication first
-            if current_user.is_authenticated:
-                user = current_user
-                auth_method = "session"
-                # Set g.current_user for consistency across both auth methods
-                g.current_user = user
-            
-            # Method 2: Fall back to JWT token authentication
-            else:
-                token = request.cookies.get(current_app.config.get("JWT_TOKEN_NAME"))
-                if not token:
-                    auth_header = request.headers.get('Authorization', request.headers.get('authorization', '')) or ''
-                    if auth_header.startswith('Bearer '):
-                        token = auth_header.split(' ', 1)[1].strip()
-                    elif auth_header:
-                        token = auth_header.strip()
+            # Who is calling: the session first, then the token (see identify)
+            user, refusal = identify()
+            if refusal:
+                return refusal
+            # Set g.current_user for consistency across both auth methods
+            g.current_user = user
 
-                if not token:
-                    return {
-                        "message": "Authentication required. No session or token found.",
-                        "data": None,
-                        "error": "Unauthorized"
-                    }, 401
-                
-                try:
-                    # Decode the token and retrieve the user data
-                    data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-                    user = User.query.filter_by(_uid=data["_uid"]).first()
-
-                    if user is None:
-                        return {
-                            "message": "Invalid Authentication token!",
-                            "data": None,
-                            "error": "Unauthorized"
-                        }, 401
-
-                    # Tokens issued before this field existed have no token_version claim
-                    # (treated as 0); reject if it doesn't match the account's current
-                    # value -- i.e. the password has changed since this token was issued.
-                    if data.get("token_version", 0) != (user.token_version or 0):
-                        return {
-                            "message": "Token is no longer valid -- password has changed.",
-                            "data": None,
-                            "error": "Unauthorized"
-                        }, 401
-
-                    auth_method = "jwt"
-                    # Set the current_user in the global context
-                    g.current_user = user
-                
-                except jwt.ExpiredSignatureError:
-                    return {
-                        "message": "Token has expired!",
-                        "data": None,
-                        "error": "Unauthorized"
-                    }, 401
-                except jwt.InvalidTokenError:
-                    return {
-                        "message": "Invalid token!",
-                        "data": None,
-                        "error": "Unauthorized"
-                    }, 401
-                except Exception as e:
-                    return {
-                        "message": "Something went wrong decoding the token!",
-                        "data": None,
-                        "error": str(e)
-                    }, 500
-            
-            # An account type can last only a few hours (see model/dataconfigs/account_types.json). When it has
-            # passed the account is made inactive, and its record is kept.
-            if user.expired():
-                if user.active:
-                    user.deactivate()
-                return {
-                    "message": "This account has expired.",
-                    "data": None,
-                    "error": "Forbidden"
-                }, 403
-
-            # An inactive account is not authorized until a Teacher/Admin verifies it.
-            if not user.active:
-                return {
-                    "message": "Account pending verification.",
-                    "data": None,
-                    "error": "Forbidden"
-                }, 403
+            # An expired or inactive account is refused
+            refusal = account_refusal(user)
+            if refusal:
+                return refusal
 
             # An account type can be limited to a short list of requests, and to a number of
             # requests a minute. The CORS preflight (OPTIONS) carries no login.
@@ -173,15 +209,9 @@ def auth_required(roles=None):
 
             # Now check role requirements if specified
             if roles:
-                # Normalize roles to list for consistent checking
-                required_roles = list(roles) if isinstance(roles, (list, tuple)) else [roles]
-                
-                if user.role not in required_roles:
-                    return {
-                        "message": f"Insufficient permissions. Required roles: {', '.join(required_roles)}",
-                        "data": None,
-                        "error": "Forbidden"
-                    }, 403
+                refusal = role_refusal(user, roles)
+                if refusal:
+                    return refusal
             
             # If this is a CORS preflight request, return 200 OK immediately
             if request.method == 'OPTIONS':
