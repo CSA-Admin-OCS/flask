@@ -20,3 +20,6 @@ instance/data.json
 instance/data.json.*.bak
 instance/data/jokes.json
 *user_management*.db
+# user backups contain names/emails, never commit them
+instance/backup/
+instance/backups/
