@@ -20,6 +20,9 @@ instance/data.json
 instance/data.json.*.bak
 instance/data/jokes.json
 *user_management*.db
+# local run output and macOS metadata
+*.log
+.DS_Store
 # user backups contain names/emails, never commit them
 instance/backup/
 instance/backups/
