@@ -70,7 +70,7 @@ Every request is in exactly one of these lists. **A request in none of them is o
 |---|---|
 | `public` | Anyone, with or without an account, on purpose: the home page, login, sign-up. |
 | `public_restricted` | Anyone, on purpose, but the route runs code or spends a provider's credit. Nothing goes here until it has been reviewed to run in a sandbox and under a rate limit. Empty today. |
-| `legacy_open` | Anyone, because it has always been so and nobody has yet decided that it should be. Groups of requests, each with an `owner` and a `review_by` date. The aim is for this list to get shorter: each request moves to `public`, or to a list that needs an account. |
+| `legacy_open` | Anyone, because it has always been so and nobody has yet decided that it should be. Groups of requests, each with an `owner`. The aim is for this list to get shorter: each request moves to `public`, or to a list that needs an account. |
 | `device_key` | A device that sends the device key. The route checks the key. |
 | `session` | A page behind the Flask session login. |
 | `signed_in` | Any active account. |
@@ -108,7 +108,7 @@ In shadow mode a mistake in the check is logged and the request goes on, so the 
 request fails.
 
 The loader refuses a request that is in two lists, a role that `account_types.json` does not have, an entry
-that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
+that is not `"METHOD /route"`, and a `legacy_open` group with no owner.
 
 `python scripts/verify/verify_permissions.py` is the check to run whenever a route is added or changed. It fails when:
 
@@ -117,7 +117,6 @@ that is not `"METHOD /route"`, and a `legacy_open` group with no owner or date.
   names every caller the file may hold a route tighter than its guard does (that is how a route is closed from
   data); it may never be looser;
 - a request not listed as open answers a caller with no account, when really called;
-- a `legacy_open` group is past its `review_by` date.
 
 It calls the routes on a throwaway copy of the app with no network and no provider keys
 (`scripts/rbac/rbac_prober.py`), so it is safe to run anywhere.

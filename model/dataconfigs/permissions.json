@@ -69,7 +69,6 @@
   "legacy_open": [
     {
       "owner": "misc",
-      "review_by": "2027-01-31",
       "requests": [
         "POST /api/ainpc/greeting",
         "POST /api/ainpc/prompt",
